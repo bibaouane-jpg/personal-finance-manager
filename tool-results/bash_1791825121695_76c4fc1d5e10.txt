@@ -1,0 +1,200 @@
+Agent: bank-credits-view
+Task: Implement the Bank Credits view (`src/components/views/bank-credits-view.tsx`) — a polished Bank Credits page with credit-card-style visuals, installment schedule, repayment dialog, and full CRUD against `/api/bank-credits*`.
+
+Work Log:
+- Read the worklog, existing views (`wallets-view.tsx`, `dashboard-view.tsx`), shared components (`shared.tsx`, `confirm-dialog.tsx`), and the bank-credits API routes (`/api/bank-credits`, `/api/bank-credits/[id]`, `/api/bank-credits/[id]/repayments`) to align with established patterns (useApi + useMutation + useQuery, toast on errors, invalidate after mutations).
+- Replaced the 1-line stub with a ~1220-line implementation:
+  1. **PageHeader** with `t('credit.title')` title and an Add button that opens the Create dialog.
+  2. **Credits list grid** (1 col mobile / 2 cols sm+) where each credit renders as a credit-card-style Card:
+     - Top stripe (4px `borderTop`) tinted by `creditCardColor(progressPct)` — red (<50%), orange (50–<70%), dark green (70–<90%), green (90–100%).
+     - Subtle diagonal gradient overlay (`linear-gradient(135deg, ${tint}, transparent 60%)`) tinted with the same color for a credit-card feel.
+     - Header row: Landmark icon chip (color-matched) + credit name; lender + status badges.
+     - Hero block: large outstanding amount colored by the same palette.
+     - Quick-stats row: original principal / monthly installment / duration (months) / progress %.
+     - Custom progress bar (hand-rolled div instead of shadcn `Progress` because the shadcn indicator is hardcoded to `bg-primary`); the fill width is the progressPct and the `backgroundColor` is the card stripe color.
+     - 4 MiniStat tiles: Total repaid (income tone), Paid installments / total (info), Next due date, Expected end date.
+     - Optional description (`line-clamp-2`).
+     - Kebab menu (DropdownMenu): View Schedule, Add Repayment, Edit, Delete.
+  3. **Create/Edit dialog**: fields for Credit name, Lender, Original principal, Duration months, Start date, Monthly installment, Interest rate (optional), Fees (optional), Payment day (1–31), Description, Status (Select: active / completed / on_hold). All wrapped in a `ScrollArea` (max-h-[70vh]) for small screens. Validation per field with toast.error on miss.
+  4. **Schedule dialog**: fetches `/api/bank-credits/[id]` on open (via `useQuery(['bank-credit', id])`, `enabled` when dialog open). Renders a 2/4-column grid of installment segments, each colored by `installmentSegment(inst)`:
+     - paid → green tint + green border + green badge.
+     - pending + dueDate < today → red tint + red border + red badge.
+     - pending + future → orange tint + orange border + orange badge.
+     - Each segment shows installment number (#N), status badge, due date, and amount.
+     - When multiple years are present, groups by year with a header row (Flag icon + `t('common.year') {year}` + horizontal rule).
+     - Legend at the top (paid / overdue / remaining).
+  5. **Add Repayment dialog**: Amount, Payment date (default today), Comment, Wallet (Select — optional, fetched from `/api/wallets`). Sub-select with a `__none__` sentinel SelectItem for "None". On submit POSTs to `/api/bank-credits/[id]/repayments` with `walletId: null` when None.
+  6. **Delete**: `ConfirmDialog` (destructive). On 409 ("Cannot delete a credit with repayments"), the useApi wrapper toasts the error; the mutation throws; `await deleteMutation.mutateAsync(id)` propagates the throw out of `onConfirm`, so ConfirmDialog's `onOpenChange(false)` is never called and the dialog remains open — surfacing the conflict.
+  7. **Empty state**: `EmptyState` with `t('credit.empty')` and an Add button. Skeleton placeholders during initial load.
+- Mutations: `createMutation`, `updateMutation`, `deleteMutation`, `repaymentMutation` — each invalidates `['bank-credits']`, `['bank-credit', id]` (when relevant), `['dashboard']`, and `['analytics']` on success.
+- Strict TypeScript types for `BankCredit`, `BankCreditDetail`, `CreditInstallment`, `CreditRepayment`, `Wallet`, `WalletsResponse`, `BankCreditsListResponse`. No `any`.
+- Status labels reuse existing i18n keys (active → `common.active`, completed → `goal.status.completed`, on_hold → `goal.status.on_hold`) so no changes to i18n.ts were required.
+- All API requests use relative paths only (`/api/bank-credits`, `/api/bank-credits/${id}`, etc.) per the gateway rules.
+- Sticky footer behavior is handled by the existing app-shell wrapper.
+
+Validation:
+- `bun run lint` → 0 errors in `bank-credits-view.tsx`. (1 pre-existing warning in `src/components/boot.tsx` — not my file.)
+- `tail -40 dev.log` → `✓ Compiled in 144ms` / `✓ Compiled in 146ms`, no compile errors, no Fast Refresh runtime errors after my final edits.
+- Verified `BankCreditsView` is wired in `src/components/app-shell.tsx` (`case 'bankCredits': return <BankCreditsView />`) — no changes needed there.
+
+Stage Summary:
+- Bank Credits view is feature-complete: credit-card-style visuals (color-shifts by progress), responsive 1/2-column grid, kebab menu actions (View Schedule / Add Repayment / Edit / Delete), create/edit dialog with all 11 fields, schedule dialog with year-grouped color-coded installment segments + legend, repayment dialog with optional wallet association, ConfirmDialog for delete with 409 surface, empty state, skeletons during load, and full React Query cache invalidation (list + dashboard + analytics).
+- No Prisma schema changes. No app-shell changes. No test files. Only the single file `src/components/views/bank-credits-view.tsx` was modified.
+
+---
+Task ID: 11c
+Agent: personal-loans-view-implementer
+Task: Implement `src/components/views/personal-loans-view.tsx` (Personal Loans page) — replacing the 1-line stub with a polished full-featured view.
+
+Work Log:
+- Read the worklog, the bank-credits-view (sister view sharing the same progress-stripe palette and dialog patterns), `shared.tsx`, `confirm-dialog.tsx`, `use-i18n.ts`, `use-api.ts`, and the three personal-loans API routes (`/api/personal-loans`, `/api/personal-loans/[id]`, `/api/personal-loans/[id]/operations`) to align with established conventions.
+- Confirmed i18n keys already exist (`loan.title`, `loan.add`, `loan.edit`, `loan.borrower`, `loan.originalAmount`, `loan.loanDate`, `loan.expectedRepayDate`, `loan.totalLent`, `loan.totalRepaid`, `loan.outstanding`, `loan.operations`, `loan.addOperation`, `loan.op.{disbursement|repayment|additional|correction}`, `loan.empty`, `loan.created`, `loan.operationAdded`, `loan.repaymentExceedsOutstanding`). Status labels reuse `common.active`, `goal.status.completed` (settled), `goal.status.cancelled`. Update / delete toasts reuse `common.save` / `common.delete` (matching the wallets-view & allocations-view pattern — no new keys needed).
+- Replaced the 1-line stub with a ~770-line implementation:
+  1. **PageHeader** with `t('loan.title')` title and an Add button that opens the Create dialog.
+  2. **Loan cards grid** (1 col mobile / 2 cols sm+) — each card uses the same credit-card-style visual language as `BankCreditsView`:
+     - Top stripe (4px `borderTop`) tinted by `loanCardColor(progressPct)` — red (<50%), orange (50–<70%), dark green (70–<90%), green (90–100%).
+     - Subtle diagonal gradient overlay tinted with the same color.
+     - Header row: HandCoins icon chip (color-matched) + borrower name; status badge (active=info, settled=income, cancelled=expense) + loan-date badge.
+     - Hero block: large outstanding amount colored by the same palette.
+     - Quick-stats row: Total lent / Total repaid (income tone) / Progress % / Expected repayment date.
+     - Custom progress bar (hand-rolled div — shadcn `Progress` hardcodes `bg-primary` and can't be tinted per-card).
+     - Operations preview (last 3) — each row shows the type icon (ArrowDownCircle/ArrowUpCircle/PlusCircle/RefreshCw), a colored type badge, the operation date, and the amount (income tone for repayment/correction, default for disbursement/additional).
+     - Optional description (`line-clamp-2`).
+     - Kebab menu (DropdownMenu): View Operations, Add Operation, Edit, Delete.
+  3. **Create/Edit dialog**: Borrower name (required), Original amount lent (number, required only on create — disabled on edit because the PUT endpoint doesn't accept it), Loan date (date, required only on create — disabled on edit), Expected repayment date (optional), Description (Textarea), Comment (Textarea), Status (Select: active/settled/cancelled). Wrapped in `ScrollArea` (max-h-[70vh]) for small screens. Validation per field with `toast.error` on miss.
+  4. **Operations history dialog** (`max-w-2xl`): fetches `/api/personal-loans/[id]/operations` on open via `useQuery(['personal-loan-operations', id])`. Renders a `Table` with columns Date / Type (colored badge with icon) / Amount / Comment. Sorted by date descending. A "Record operation" button in the footer opens the Add Operation dialog inline (does not close the Operations dialog).
+  5. **Add Operation dialog**: Operation type (Select with icon-prefixed items: disbursement/repayment/additional/correction), Amount (Input number, required, must be >0 except for correction), Operation date (Input date, default today), Comment (Textarea, marked required when type=correction — the API returns 400 otherwise), Wallet (Select — optional, fetched from `/api/wallets`, `__none__` sentinel SelectItem for "None"). On submit POSTs to `/api/personal-loans/[id]/operations` with `walletId: null` when None. On 400 ("Repayment exceeds the outstanding amount.") the useApi wrapper auto-toasts the message; the mutation throws; the dialog stays open so the user can retry.
+  6. **Delete**: `ConfirmDialog` (destructive). On 409 ("Cannot delete a loan with operations beyond the initial disbursement…") the useApi wrapper toasts the error and the mutation throws, so ConfirmDialog's `onOpenChange(false)` is never called and the dialog remains open — surfacing the conflict to the user.
+  7. **Empty state**: `EmptyState` with `t('loan.empty')` and an Add button. Skeleton placeholders during initial load.
+- Mutations: `createMutation`, `updateMutation`, `deleteMutation`, `operationMutation` — each invalidates `['personal-loans']`, `['personal-loan-operations', id]` (when relevant), `['dashboard']`, and `['analytics']` on success.
+- Strict TypeScript types for `PersonalLoan`, `LoanOperation`, `LoansListResponse`, `OperationsResponse`, `Wallet`, `WalletsResponse`. No `any`.
+- All API requests use relative paths only (`/api/personal-loans`, `/api/personal-loans/${id}`, `/api/personal-loans/${id}/operations`, `/api/wallets`) per the gateway rules.
+- Sticky footer behavior is handled by the existing app-shell wrapper.
+
+Validation:
+- `bun run lint` → 0 errors in `personal-loans-view.tsx`. (1 pre-existing warning in `src/components/boot.tsx` — not my file.)
+- `tail -25 dev.log` → `✓ Compiled in 363ms` / `✓ Compiled in 148ms` / `✓ Compiled in 68ms` / `✓ Compiled in 205ms`, no compile errors, no Fast Refresh runtime errors after my final edits.
+- Verified `PersonalLoansView` is already wired in `src/components/app-shell.tsx` (`case 'personalLoans': return <PersonalLoansView />`) — no changes needed there.
+- Initial draft had a Rules-of-Hooks violation (`useMemo` called inside `.map()`); fixed by computing the recent-ops slice inline before passing to the `LoanCard` sub-component.
+
+Stage Summary:
+- Personal Loans view is feature-complete: credit-card-style visuals (color-shifts by repayment progress), responsive 1/2-column grid, kebab menu actions (View Operations / Add Operation / Edit / Delete), create/edit dialog with all fields (original amount & loan date disabled in edit since the PUT endpoint ignores them), operations-history dialog with a colored type-badged Table + inline "Record operation" launcher, add-operation dialog with optional wallet association + correction-required comment guard, ConfirmDialog for delete with 409 surface, empty state, skeletons during load, and full React Query cache invalidation (list + operations + dashboard + analytics).
+- No Prisma schema changes. No app-shell changes. No i18n changes. No test files. Only the single file `src/components/views/personal-loans-view.tsx` was modified.
+
+---
+Task ID: 12a
+Agent: frontend-goals-view
+Task: Implement the Goals annual-planning view (`src/components/views/goals-view.tsx`) — a polished single-route client view with year selector, summary strip, category comparison chart, filter bar, goal card grid, create/edit dialog with inline category management, dedicated category management dialog, and delete confirmation.
+
+Work Log:
+- Read `worklog.md` (Tasks 1, 4, 5, 6, 8, 9, 10a, 10b, 11a) to align with established conventions: shared components (`StatCard`, `EmptyState`, `MoneyText`, `PageHeader` in `src/components/shared.tsx`), `ConfirmDialog`, `useI18n()` (`locale, t, money, num, date, dateTime`), `useApi()` (`get, post, put, del` with auto-toast on non-2xx), `money.ts` (`toCents, fromCents, addMoney, subMoney, pct`), and the goals backend (`/api/goals` GET returns `{ items, total, page, pageSize, summary }` with `summary` containing `totalGoals, completedGoals, inProgressGoals, overallProgress, requiredTotal, savedTotal, remainingTotal, byCategory: [{ id, name, color, count, required, saved }]}`; POST validates `{ year, title, description?, priority?, progress?, status?, targetDate?, requiredBudget?, savedBudget?, note?, goalCategoryId? }` and forces `progress=100` when `status=completed`; GET/PUT/DELETE on `/api/goals/[id]`; `/api/goals/export?year=` returns CSV; `/api/goal-categories` GET returns `{ items: [{ id, name, color, _count.goals }] }`, POST/PUT/DELETE on `/api/goal-categories/[id]` with 409 when deleting a referenced category).
+- Confirmed i18n keys exist in both EN & FR dictionaries for `goal.*` (title, add, edit, category, priority, progress, targetDate, requiredBudget, savedBudget, remainingBudget, note, status.not_started/in_progress/completed/on_hold/cancelled, priorities.1-5, empty, created, updated, totalGoals, completedGoals, inProgressGoals, overallProgress, requiredTotal, savedTotal, remainingTotal), `analytics.yearComparison`, `cat.*` (title, add, edit, empty, created, updated, archived), and `common.*` (save, cancel, delete, edit, create, search, all, none, loading, empty, year, status, category, priority, color, name, description, actions, clearFilters, exportCsv, thisYear, close, total, remaining, progress). No new i18n keys were needed — reused existing entries.
+- Replaced the 1-line stub with a ~1410-line `'use client'` component. Imports include `useMemo, useState` from React; `useQuery, useMutation, useQueryClient` from `@tanstack/react-query`; `toast` from `sonner`; recharts pieces (`ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip`); shadcn/ui set (Card, Button, Input, Label, Textarea, Badge, Skeleton, Progress, ScrollArea, Select, Dialog, DropdownMenu); `StatCard, EmptyState, MoneyText, PageHeader` from `@/components/shared`; `ConfirmDialog`; `useI18n`, `useApi`; `cn` from `@/lib/utils`; and lucide icons (`Plus, Pencil, Trash2, MoreHorizontal, Search, Download, Target, CheckCircle2, CircleDollarSign, Gauge, Wallet, PiggyBank, CalendarClock, ChevronLeft, ChevronRight, Tag, X`).
+
+Layout (top → bottom):
+1. **PageHeader** titled `t('goal.title')` with two action buttons: Export CSV (outline variant, calls `window.location.href = '/api/goals/export?year=' + year`, disabled while loading or no goals) + Add goal (primary).
+2. **Year selector** — a flex row with prev-year `<ChevronLeft>` icon button, a `Select` of years `currentYear-5 .. currentYear+5` (value `String(year)`, with a leading `CalendarClock` icon inside the trigger), and a next-year `<ChevronRight>` icon button. A ghost "This year" button appears when the selected year differs from the current year, so the user can quickly jump back. Every change resets `page` to 1.
+3. **Summary strip** — 7 `StatCard`s in a responsive `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7`:
+   - Total goals (`Target`, default tone).
+   - Completed goals (`CheckCircle2`, income tone).
+   - In-progress goals (`CircleDollarSign`, info tone).
+   - Overall progress (`Gauge`, default tone; value rendered as `${num(Math.round(overallProgress))}%`).
+   - Required budget total (`Wallet`, default tone).
+   - Saved budget total (`PiggyBank`, income tone).
+   - Remaining budget total (`CircleDollarSign`, expense tone when > 0, default tone otherwise — "proper sign" because the backend always clamps to ≥ 0 and a non-zero remaining means more to save).
+   All values via `money()` / `num()` from `useI18n()`.
+4. **Category comparison chart** (Card titled `t('analytics.yearComparison')`) — recharts `BarChart` with `layout="vertical"`, `data={chartData}` derived from `summary.byCategory` (each entry `{ name, count, color }`). Each `Bar` cell colored via `<Cell fill={entry.color} />` so each category's color from the DB drives its bar. The container height grows with the number of categories (`max(180, count * 44 + 24)`). Custom `CountTooltip` (function component accepting injected `active/payload/label` plus bound `countLabel/num`) renders a popover with the category color swatch, the category name, and the goal count. Empty state shows `t('common.empty')`.
+5. **Filter bar** (Card with `pt-6` so the first Select aligns with the rest of the page's grid items) — 5-column responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-5`): search Input with leading `Search` icon, status Select (All + 5 statuses with translated labels), category Select (All + categories from `/api/goal-categories`), priority Select (All + 5 priorities as `{p} — {t('goal.priorities.p')}`), and a final column with a Clear-filters ghost button (only enabled when filters are active) + a "Manage categories" outline button (Tag icon). Sentinel value `__all__` used because Radix Select rejects empty strings.
+6. **Goals grid** (responsive `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`). Each goal card uses `flex flex-col` so the footer (target date + note) is pushed to the bottom:
+   - Header row: priority badge (`t('goal.priorities.X')` with tone-mapped color — p≤1 expense / p=2 warning / p=3 info / p≥4 muted), optional category badge colored with the category's hex via inline `style`, then the title (truncate) + a line-clamped description.
+   - A kebab `DropdownMenu` with Edit / Delete-destructive (uses `text-expense`).
+   - Status badge with tone mapping: `not_started` → muted, `in_progress` → info, `completed` → income, `on_hold` → warning, `cancelled` → expense.
+   - Progress bar (`Progress` component, h-2) with `${num(progress)}%` label on the right.
+   - Budget row (3 cols) — only when `requiredBudget` is set: required (`MoneyText` default), saved (`MoneyText` income), remaining (`MoneyText` expense tone when negative, default otherwise). Uses the backend-computed `remainingBudget` per goal.
+   - Footer: target date with `CalendarClock` icon (only when set), and a line-clamped note (only when set).
+   Loading state renders 6 skeleton cards; empty state renders `EmptyState` with `t('goal.empty')` and an Add action.
+
+Create/Edit dialog (`sm:max-w-[640px]`, `max-h-[90vh] overflow-y-auto`):
+- Two-column row: Year (`Input type=number min=2000 max=2200`), Status (`Select` of 5 statuses).
+- Title (`Input`), Description (`Textarea rows=2`).
+- **Category row** with three controls side-by-side: a `Select` (None sentinel + categories), a `<Plus>` icon button that opens the inline "Add new category" sub-dialog, and a `<Tag>` icon button that opens the Manage categories dialog.
+- Three-column row: Priority (Select 1-5 with translated labels), Progress (Input number 0-100), Target date (Input `type=date`).
+- Two-column row: Required budget (Input number step=0.01), Saved budget (Input number step=0.01).
+- Note (Textarea rows=2).
+- Footer: Cancel + submit button. Submit button shows `t('common.loading')` while submitting and is disabled. Submit label switches between `t('common.create')` / `t('common.save')` based on `editing`.
+- On submit: validates title non-empty (`toast.error`) and year within 2000-2200; builds a body with all fields, sending `null` for empty optional fields (description, targetDate, requiredBudget, savedBudget, note, goalCategoryId) so PUT properly clears them; calls `createMutation.mutateAsync` (POST `/api/goals`) or `updateMutation.mutateAsync` (PUT `/api/goals/[id]`).
+
+Inline "Add new category" sub-dialog (`sm:max-w-[400px]`):
+- Name Input + Color (`<input type="color">` paired with a hex Input).
+- Cancel + Create buttons. On create, calls `createCatMutation.mutateAsync` (POST `/api/goal-categories`). `onSuccess` invalidates `['goal-categories']` + `['goals']`, sets `formCategoryId` to the newly-created category's id (auto-selects it in the form), and closes the sub-dialog while the parent goal dialog stays open.
+
+Manage categories dialog (`sm:max-w-[480px]`):
+- Lists all categories via `ScrollArea` with `max-h-72`. Each row: color swatch + name + a secondary `Badge` showing `_count.goals` (the count of goals referencing that category) + Edit (pencil) + Delete (trash, `text-expense`) icon buttons.
+- Edit mode swaps the row into an inline editable form: Name Input + color picker + Save + Cancel buttons.
+- Empty state: `EmptyState` with `t('cat.empty')` and an Add action.
+- Footer: an "Add" outline button (left side) + a "Close" ghost button (right side).
+
+Delete confirmation:
+- Goal delete: `ConfirmDialog` with `destructive` variant; description shows the goal title. On confirm, `deleteMutation.mutateAsync(id)` → toast `t('common.delete')` → invalidate `['goals']`, `['dashboard']`, `['analytics']` → close.
+- Category delete: separate `ConfirmDialog`; description shows the category name. Backend may return 409 if the category is referenced by goals — the error is auto-toasted by `useApi` and the dialog stays open so the user can retry.
+
+Data fetching & cache invalidation:
+- `useQuery(['goals', year, filterStatus, filterCategoryId, filterPriority, search, page])` → `api.get<GoalsListResponse>('/api/goals', { query: queryFilters })` where `queryFilters` is a `useMemo` of `{ year, status?, goalCategoryId?, priority?, search?, page, pageSize }` (sentinel values become `undefined`). `pageSize=100` so the entire year's goals load on a single page (annual planner, low volume).
+- `useQuery(['goal-categories'])` → `api.get<GoalCategoriesResponse>('/api/goal-categories')` (prefetch for the form Select and the Manage dialog).
+- Both run in parallel on mount.
+- Every goal mutation (create/update/delete) invalidates `['goals']`, `['dashboard']`, `['analytics']` so the dashboard's goals section and analytics stay in sync.
+- Every category mutation invalidates both `['goal-categories']` and `['goals']` (goals cache a `goalCategory` snapshot, so a rename/color change needs to propagate).
+
+Visual / responsive touches:
+- Summary strip is `grid-cols-2` on mobile (so the 7 cards tile cleanly) and scales up to 7 columns on `xl:`.
+- The year selector uses `ChevronLeft` / `ChevronRight` icon buttons for fast year navigation alongside the Select for jumping multiple years.
+- StatCards each carry an iconography that matches their semantic meaning (`Target` for total, `CheckCircle2` for completed, `CircleDollarSign` for in-progress and remaining, `Gauge` for overall progress, `Wallet` for required, `PiggyBank` for saved).
+- All tones use the semantic Tailwind tokens (`text-income`, `text-expense`, `text-warning`, `text-info`, `border-*/30`, `bg-*/10`, `bg-muted`) so the page adapts to light/dark theme.
+- The category comparison chart colors bars from the `category.color` hex (dynamic per-category), so the visual mapping matches the badges in the grid.
+- Goal cards use `flex flex-col` + `mt-auto` on the footer so cards in the same row align their footers even when their content heights differ.
+- The "Add new category" sub-dialog is intentionally small (`max-w-[400px]`) for a fast inline flow; the larger "Manage categories" dialog (`max-w-[480px]`) handles bulk editing and deletions.
+
+TypeScript / lint:
+- All types declared at the top of the file (`GoalStatus, GoalCategory, GoalCategoryWithCount, Goal, CategorySummary, GoalSummary, GoalsListResponse, GoalCategoriesResponse`). No `any`. Type guard `isGoalStatus` enforces enum-like runtime safety on Select change handlers.
+- `cd /home/z/my-project && bun run lint` → 0 errors in `goals-view.tsx`. (1 pre-existing warning in `src/components/boot.tsx` from a stale `eslint-disable` directive — not my file.)
+- `bunx tsc --noEmit --skipLibCheck` → 0 errors in `goals-view.tsx`. (Pre-existing errors in `src/app/api/...`, `src/lib/auth.ts`, and `examples/` are from earlier tasks and unrelated.)
+
+Stage Summary:
+The Goals annual-planning view is fully implemented end-to-end (year selector + summary strip + category comparison chart + filter bar + grid + create + edit + delete + inline category creation + category management). It is wired to the existing `/api/goals`, `/api/goals/[id]`, `/api/goals/export`, and `/api/goal-categories` endpoints, follows the established patterns from the allocations & articles views (query keys, mutation invalidation, ConfirmDialog, i18n keys, shadcn/ui components, sentinel values for Radix Select), and is reachable from the app-shell sidebar (already configured to render `GoalsView` when the active view is `'goals'`). The app-shell's `min-h-screen flex flex-col` + bottom `footer` ensures the sticky-footer behavior required by the project's UI/UX standards.
+
+---
+Task ID: 12b
+Agent: analytics-view-agent
+Task: Implement `src/components/views/analytics-view.tsx` — a comprehensive Analytics page with period filter + section tabs that fetch each `/api/analytics?section=…` slice on demand.
+
+Work Log:
+- Read worklog and existing infrastructure (shared StatCard/EmptyState/PageHeader, use-i18n, use-api, money helpers, shadcn/ui Tabs/Select/Input/Table/Progress/ScrollArea/Badge, recharts).
+- Verified backend endpoint shape by reading `/api/analytics/route.ts` (income, expenses, wallets, cash_withdrawals, transfers, net_cash_flow, allocations, bank_credits, personal_loans, goals sections).
+- Replaced the 1-line stub with a full `'use client'` component file (~2000 lines):
+  - `PeriodFilterBar` — Select with today/this_week/this_month/this_year/all_time/custom_range + two date inputs when `custom_range`.
+  - `Tabs` with 10 horizontally-scrollable `TabsTrigger`s (wrapped in `ScrollArea` for mobile), each `TabsContent` mounts a `SectionLoader` that calls `useQuery({ queryKey: ['analytics', filter, from, to, section], queryFn: () => api.get('/api/analytics', { query: { filter, from, to, section } }) })` — only the active section is fetched.
+  - Per-section sub-components:
+    - IncomeSection: total/average/largest/sourceConcentration StatCards + monthly AreaChart, by-category donut PieChart, by-article and by-wallet horizontal BarCharts, source concentration Progress bar.
+    - ExpensesSection: total/average/largest/savingsRate StatCards + monthly AreaChart, by-category donut, by-article and by-wallet horizontal bars, budget comparison notice.
+    - WalletsSection: bank/cash/savings totals + horizontal BarChart by wallet (colored by wallet.color), bank-vs-cash donut, historical-evolution LineChart, inflows/outflows stacked BarChart.
+    - CashWithdrawalsSection: total/count/average StatCards + by-wallet BarChart.
+    - TransfersSection: total/count/average StatCards + by-source and by-dest horizontal BarCharts.
+    - NetCashFlowSection: income/expenses/net/savingsRate StatCards + monthly grouped BarChart (income vs expenses vs net) + net LineChart + savings rate Progress.
+    - AllocationsSection: referenceIncome/active/passive/allocated/unallocated/available/utilization StatCards + utilization Progress + by-classification donut.
+    - BankCreditsSection: originalDebt/totalRepaid/outstanding/progress StatCards + Progress + upcoming installments Table in ScrollArea.
+    - PersonalLoansSection: totalLent/totalRepaid/outstanding/progress StatCards + per-borrower Table with Progress bars.
+    - GoalsSection: required/saved/remaining/completionRate StatCards + by-year BarChart (0-100% axis) + by-category horizontal BarChart.
+  - `MoneyTooltip` and `NumberTooltip` custom recharts tooltips using `money()` / `num()`.
+  - `EmptyState` (`t('dash.noData')`) on every chart when its dataset is empty.
+  - `ResponsiveContainer` (height 260 or 300) used everywhere; `Cell fill={item.color}` / CSS vars (`var(--income)`, `var(--expense)`, `var(--warning)`, `var(--info)`, `var(--muted-foreground)`) for coloring.
+  - `useMemo` for every chart dataset so derived data is stable.
+- Cleaned up unused imports (`cn`, `ArrowUpFromLine`, `PieChart as PieChartIcon`), removed an empty `NumberTooltipEntry` interface, removed a leftover `PiggyBankFallback` wrapper, replaced non-existent i18n keys (`common.count` → `tx.count`, `credit.originalDebt` → `credit.originalPrincipal`, `credit.name` → `credit.creditName`) and dropped all `t('x') || 'fallback'` patterns.
+- Ran `bun run lint` — only the pre-existing warning in `src/components/boot.tsx` remains; my file is clean (0 errors).
+- Confirmed dev server (`tail -20 dev.log`) compiled successfully with no new errors.
+
+Stage Summary:
+- Delivered `src/components/views/analytics-view.tsx` (~2000 lines): a fully-featured Analytics page with 10 tabbed sections, each lazily fetching its own slice from `/api/analytics?section=…`.
+- All charts use recharts (`ResponsiveContainer` height 260/300), money-formatted tooltips, category/wallet colors via `Cell`, and CSS-var fallbacks.
+- All empty datasets render the shared `EmptyState` with `t('dash.noData')`.
+- The page is mobile-responsive (scrollable tab list, grid responsive breakpoints) and integrates with the existing app shell via the same `PageHeader` / `StatCard` / `PeriodFilterBar` patterns used in `dashboard-view`.
+- Lint passes; dev server compiles.

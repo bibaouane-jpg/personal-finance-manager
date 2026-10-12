@@ -1,0 +1,2002 @@
+     1→'use client'
+     2→
+     3→import { useMemo, useState } from 'react'
+     4→import { useQuery } from '@tanstack/react-query'
+     5→import {
+     6→  ResponsiveContainer,
+     7→  BarChart,
+     8→  Bar,
+     9→  PieChart,
+    10→  Pie,
+    11→  Cell,
+    12→  LineChart,
+    13→  Line,
+    14→  AreaChart,
+    15→  Area,
+    16→  XAxis,
+    17→  YAxis,
+    18→  CartesianGrid,
+    19→  Tooltip as RechartsTooltip,
+    20→  Legend,
+    21→} from 'recharts'
+    22→import {
+    23→  TrendingUp,
+    24→  TrendingDown,
+    25→  Wallet as WalletIcon,
+    26→  Banknote,
+    27→  ArrowLeftRight,
+    28→  Scale,
+    29→  CreditCard,
+    30→  HandCoins,
+    31→  Target,
+    32→  CalendarClock,
+    33→  Coins,
+    34→  Landmark,
+    35→  Percent,
+    36→  ArrowDownToLine,
+    37→  Hash,
+    38→  Trophy,
+    39→  Layers,
+    40→  CircleDollarSign,
+    41→  PiggyBank,
+    42→} from 'lucide-react'
+    43→
+    44→import { useI18n } from '@/lib/use-i18n'
+    45→import { useApi } from '@/lib/use-api'
+    46→
+    47→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    48→import {
+    49→  Select,
+    50→  SelectContent,
+    51→  SelectItem,
+    52→  SelectTrigger,
+    53→  SelectValue,
+    54→} from '@/components/ui/select'
+    55→import { Input } from '@/components/ui/input'
+    56→import { Skeleton } from '@/components/ui/skeleton'
+    57→import { Badge } from '@/components/ui/badge'
+    58→import { Progress } from '@/components/ui/progress'
+    59→import { ScrollArea } from '@/components/ui/scroll-area'
+    60→import {
+    61→  Tabs,
+    62→  TabsContent,
+    63→  TabsList,
+    64→  TabsTrigger,
+    65→} from '@/components/ui/tabs'
+    66→import {
+    67→  Table,
+    68→  TableBody,
+    69→  TableCell,
+    70→  TableHead,
+    71→  TableHeader,
+    72→  TableRow,
+    73→} from '@/components/ui/table'
+    74→import { StatCard, EmptyState, PageHeader } from '@/components/shared'
+    75→
+    76→// ---------------------------------------------------------------------------
+    77→// Types — minimal shapes matching the /api/analytics?section=… response.
+    78→// ---------------------------------------------------------------------------
+    79→
+    80→type PeriodFilter =
+    81→  | 'today'
+    82→  | 'this_week'
+    83→  | 'this_month'
+    84→  | 'this_year'
+    85→  | 'all_time'
+    86→  | 'custom_range'
+    87→
+    88→type AnalyticsSection =
+    89→  | 'income'
+    90→  | 'expenses'
+    91→  | 'wallets'
+    92→  | 'cash_withdrawals'
+    93→  | 'transfers'
+    94→  | 'net_cash_flow'
+    95→  | 'allocations'
+    96→  | 'bank_credits'
+    97→  | 'personal_loans'
+    98→  | 'goals'
+    99→
+   100→interface ByCategoryRow {
+   101→  categoryId: string
+   102→  name: string
+   103→  color: string
+   104→  amount: string
+   105→}
+   106→interface ByArticleRow {
+   107→  articleId: string
+   108→  name: string
+   109→  amount: string
+   110→}
+   111→interface ByWalletRow {
+   112→  walletId: string
+   113→  name: string
+   114→  color: string
+   115→  amount: string
+   116→}
+   117→interface MonthlyAmount {
+   118→  month: string
+   119→  amount: string
+   120→}
+   121→interface LargestRow {
+   122→  id: string
+   123→  name: string | null
+   124→  amount: string
+   125→  date: string
+   126→  categoryName: string | null
+   127→}
+   128→
+   129→interface IncomeData {
+   130→  total: string
+   131→  byCategory: ByCategoryRow[]
+   132→  byArticle: ByArticleRow[]
+   133→  byWallet: ByWalletRow[]
+   134→  monthly: MonthlyAmount[]
+   135→  average: string
+   136→  largest: LargestRow | null
+   137→  sourceConcentration: number
+   138→}
+   139→interface ExpenseData {
+   140→  total: string
+   141→  byCategory: ByCategoryRow[]
+   142→  byArticle: ByArticleRow[]
+   143→  byWallet: ByWalletRow[]
+   144→  largest: LargestRow | null
+   145→  monthly: MonthlyAmount[]
+   146→  average: string
+   147→  savingsRate: number
+   148→  budgetComparison: { hasBudgets: boolean; message?: string }
+   149→}
+   150→interface WalletCurrent {
+   151→  walletId: string
+   152→  name: string
+   153→  type: string
+   154→  color: string
+   155→  active: boolean
+   156→  balance: string
+   157→}
+   158→interface WalletFlowRow {
+   159→  walletId: string
+   160→  name: string
+   161→  amount: string
+   162→}
+   163→interface WalletsData {
+   164→  currentByWallet: WalletCurrent[]
+   165→  bankVsCash: {
+   166→    bank: string
+   167→    cash: string
+   168→    savings: string
+   169→    other: string
+   170→  }
+   171→  historicalEvolution: { date: string; total: string }[]
+   172→  inflows: WalletFlowRow[]
+   173→  outflows: WalletFlowRow[]
+   174→  transfers: { count: number; total: string }
+   175→  withdrawals: {
+   176→    external: { count: number; total: string }
+   177→    internal: { count: number; total: string }
+   178→  }
+   179→  adjustments: { count: number; total: string }
+   180→}
+   181→interface CashWithdrawalsData {
+   182→  total: string
+   183→  byWallet: ByWalletRow[]
+   184→  count: number
+   185→}
+   186→interface TransfersData {
+   187→  total: string
+   188→  count: number
+   189→  bySource: (ByWalletRow & { count: number })[]
+   190→  byDest: (ByWalletRow & { count: number })[]
+   191→}
+   192→interface NetCashFlowData {
+   193→  income: string
+   194→  expenses: string
+   195→  net: string
+   196→  monthly: { month: string; income: string; expenses: string; net: string }[]
+   197→  savingsRate: number
+   198→}
+   199→interface AllocationClassificationRow {
+   200→  classification: string
+   201→  count: number
+   202→  amount: string
+   203→}
+   204→interface AllocationsData {
+   205→  referenceIncome: string
+   206→  totalActive: string
+   207→  totalPassive: string
+   208→  totalAllocated: string
+   209→  unallocated: string
+   210→  utilization: number
+   211→  available: string
+   212→  byClassification: AllocationClassificationRow[]
+   213→}
+   214→interface UpcomingInstallment {
+   215→  creditId: string
+   216→  creditName: string
+   217→  installmentNumber: number
+   218→  dueDate: string
+   219→  amount: string
+   220→  status: string
+   221→}
+   222→interface BankCreditsData {
+   223→  originalDebt: string
+   224→  totalRepaid: string
+   225→  outstanding: string
+   226→  progressPct: number
+   227→  upcomingInstallments: UpcomingInstallment[]
+   228→}
+   229→interface BorrowerProgress {
+   230→  loanId: string
+   231→  borrowerName: string
+   232→  lent: string
+   233→  repaid: string
+   234→  outstanding: string
+   235→  progressPct: number
+   236→}
+   237→interface PersonalLoansData {
+   238→  totalLent: string
+   239→  totalRepaid: string
+   240→  outstanding: string
+   241→  progressPct: number
+   242→  progressByBorrower: BorrowerProgress[]
+   243→}
+   244→interface GoalYearRow {
+   245→  year: number
+   246→  count: number
+   247→  completed: number
+   248→  overallProgress: number
+   249→}
+   250→interface GoalCategoryRow {
+   251→  categoryName: string
+   252→  color: string
+   253→  count: number
+   254→  avgProgress: number
+   255→}
+   256→interface GoalsData {
+   257→  progressByYear: GoalYearRow[]
+   258→  completionRate: number
+   259→  totalGoals: number
+   260→  completedGoals: number
+   261→  budgetProgress: { required: string; saved: string; remaining: string }
+   262→  categoryComparison: GoalCategoryRow[]
+   263→}
+   264→
+   265→// ---------------------------------------------------------------------------
+   266→// Shared helpers
+   267→// ---------------------------------------------------------------------------
+   268→
+   269→const FILTER_OPTIONS: { value: PeriodFilter; labelKey: string }[] = [
+   270→  { value: 'today', labelKey: 'common.today' },
+   271→  { value: 'this_week', labelKey: 'common.thisWeek' },
+   272→  { value: 'this_month', labelKey: 'common.thisMonth' },
+   273→  { value: 'this_year', labelKey: 'common.thisYear' },
+   274→  { value: 'all_time', labelKey: 'common.allTime' },
+   275→  { value: 'custom_range', labelKey: 'common.customRange' },
+   276→]
+   277→
+   278→const SECTION_TABS: { value: AnalyticsSection; labelKey: string }[] = [
+   279→  { value: 'income', labelKey: 'analytics.income' },
+   280→  { value: 'expenses', labelKey: 'analytics.expenses' },
+   281→  { value: 'wallets', labelKey: 'analytics.wallets' },
+   282→  { value: 'cash_withdrawals', labelKey: 'analytics.cashWithdrawals' },
+   283→  { value: 'transfers', labelKey: 'analytics.transfers' },
+   284→  { value: 'net_cash_flow', labelKey: 'analytics.netCashFlow' },
+   285→  { value: 'allocations', labelKey: 'analytics.allocations' },
+   286→  { value: 'bank_credits', labelKey: 'analytics.bankCredits' },
+   287→  { value: 'personal_loans', labelKey: 'analytics.personalLoans' },
+   288→  { value: 'goals', labelKey: 'analytics.goals' },
+   289→]
+   290→
+   291→const INCOME_COLOR = 'var(--income)'
+   292→const EXPENSE_COLOR = 'var(--expense)'
+   293→const WARNING_COLOR = 'var(--warning)'
+   294→const INFO_COLOR = 'var(--info)'
+   295→const MUTED_COLOR = 'var(--muted-foreground)'
+   296→
+   297→const WALLET_TYPE_COLORS: Record<string, string> = {
+   298→  bank: 'var(--info)',
+   299→  cash: 'var(--warning)',
+   300→  savings: INCOME_COLOR,
+   301→  other: MUTED_COLOR,
+   302→}
+   303→
+   304→function safeColor(c: string | null | undefined, fallback = MUTED_COLOR): string {
+   305→  if (!c) return fallback
+   306→  return c.startsWith('#') || c.startsWith('var(') || c.startsWith('rgb') ? c : fallback
+   307→}
+   308→
+   309→function formatMonthLabel(month: string, locale: 'en' | 'fr'): string {
+   310→  // month comes as "YYYY-MM"
+   311→  const d = new Date(`${month}-01T00:00:00Z`)
+   312→  if (isNaN(d.getTime())) return month
+   313→  return new Intl.DateTimeFormat(locale === 'fr' ? 'fr-FR' : 'en-US', {
+   314→    month: 'short',
+   315→    year: '2-digit',
+   316→    timeZone: 'UTC',
+   317→  }).format(d)
+   318→}
+   319→
+   320→function formatTrendDate(iso: string, locale: 'en' | 'fr'): string {
+   321→  const d = new Date(iso)
+   322→  if (isNaN(d.getTime())) return iso
+   323→  return new Intl.DateTimeFormat(locale === 'fr' ? 'fr-FR' : 'en-US', {
+   324→    month: 'short',
+   325→    day: 'numeric',
+   326→  }).format(d)
+   327→}
+   328→
+   329→function formatYearLabel(year: number, locale: 'en' | 'fr'): string {
+   330→  return new Intl.DateTimeFormat(locale === 'fr' ? 'fr-FR' : 'en-US', {
+   331→    year: 'numeric',
+   332→  }).format(new Date(Date.UTC(year, 0, 1)))
+   333→}
+   334→
+   335→function asNumber(v: string | number | null | undefined): number {
+   336→  if (v === null || v === undefined) return 0
+   337→  const n = typeof v === 'number' ? v : Number(v)
+   338→  return Number.isFinite(n) ? n : 0
+   339→}
+   340→
+   341→// ---------------------------------------------------------------------------
+   342→// Money tooltip
+   343→// ---------------------------------------------------------------------------
+   344→
+   345→interface TooltipEntry {
+   346→  name?: string | number
+   347→  value?: string | number
+   348→  color?: string
+   349→  dataKey?: string | number
+   350→}
+   351→
+   352→function MoneyTooltip({
+   353→  active,
+   354→  payload,
+   355→  label,
+   356→  money,
+   357→  labelFormatter,
+   358→}: {
+   359→  active?: boolean
+   360→  payload?: TooltipEntry[]
+   361→  label?: string | number
+   362→  money: (v: string | number | null | undefined) => string
+   363→  labelFormatter?: (label: string | number | undefined) => string
+   364→}) {
+   365→  if (!active || !payload || payload.length === 0) return null
+   366→  return (
+   367→    <div className="rounded-md border bg-popover p-3 text-xs shadow-md">
+   368→      {label !== undefined && label !== '' && (
+   369→        <p className="mb-1 font-medium text-foreground">
+   370→          {labelFormatter ? labelFormatter(label) : label}
+   371→        </p>
+   372→      )}
+   373→      <div className="space-y-1">
+   374→        {payload.map((entry, i) => (
+   375→          <div key={i} className="flex items-center gap-2">
+   376→            <span
+   377→              className="inline-block h-2.5 w-2.5 rounded-full"
+   378→              style={{ backgroundColor: entry.color || MUTED_COLOR }}
+   379→            />
+   380→            <span className="text-muted-foreground">{entry.name}:</span>
+   381→            <span className="font-medium tabular-nums text-foreground">
+   382→              {money(entry.value)}
+   383→            </span>
+   384→          </div>
+   385→        ))}
+   386→      </div>
+   387→    </div>
+   388→  )
+   389→}
+   390→
+   391→function NumberTooltip({
+   392→  active,
+   393→  payload,
+   394→  label,
+   395→  num,
+   396→  labelFormatter,
+   397→  suffix = '',
+   398→}: {
+   399→  active?: boolean
+   400→  payload?: TooltipEntry[]
+   401→  label?: string | number
+   402→  num: (v: number) => string
+   403→  labelFormatter?: (label: string | number | undefined) => string
+   404→  suffix?: string
+   405→}) {
+   406→  if (!active || !payload || payload.length === 0) return null
+   407→  return (
+   408→    <div className="rounded-md border bg-popover p-3 text-xs shadow-md">
+   409→      {label !== undefined && label !== '' && (
+   410→        <p className="mb-1 font-medium text-foreground">
+   411→          {labelFormatter ? labelFormatter(label) : label}
+   412→        </p>
+   413→      )}
+   414→      <div className="space-y-1">
+   415→        {payload.map((entry, i) => (
+   416→          <div key={i} className="flex items-center gap-2">
+   417→            <span
+   418→              className="inline-block h-2.5 w-2.5 rounded-full"
+   419→              style={{ backgroundColor: entry.color || MUTED_COLOR }}
+   420→            />
+   421→            <span className="text-muted-foreground">{entry.name}:</span>
+   422→            <span className="font-medium tabular-nums text-foreground">
+   423→              {num(asNumber(entry.value))}
+   424→              {suffix}
+   425→            </span>
+   426→          </div>
+   427→        ))}
+   428→      </div>
+   429→    </div>
+   430→  )
+   431→}
+   432→
+   433→// ---------------------------------------------------------------------------
+   434→// Chart card wrapper & empty state
+   435→// ---------------------------------------------------------------------------
+   436→
+   437→function ChartCard({
+   438→  title,
+   439→  children,
+   440→  className,
+   441→}: {
+   442→  title: string
+   443→  children: React.ReactNode
+   444→  className?: string
+   445→}) {
+   446→  return (
+   447→    <Card className={className}>
+   448→      <CardHeader>
+   449→        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+   450→      </CardHeader>
+   451→      <CardContent>{children}</CardContent>
+   452→    </Card>
+   453→  )
+   454→}
+   455→
+   456→function ChartEmpty({ noData }: { noData: string }) {
+   457→  return (
+   458→    <div className="flex h-[200px] items-center justify-center">
+   459→      <EmptyState title={noData} />
+   460→    </div>
+   461→  )
+   462→}
+   463→
+   464→// ---------------------------------------------------------------------------
+   465→// Skeletons
+   466→// ---------------------------------------------------------------------------
+   467→
+   468→function AnalyticsSkeleton() {
+   469→  return (
+   470→    <div className="space-y-4">
+   471→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   472→        {Array.from({ length: 4 }).map((_, i) => (
+   473→          <Skeleton key={i} className="h-24" />
+   474→        ))}
+   475→      </div>
+   476→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   477→        <Skeleton className="h-[320px]" />
+   478→        <Skeleton className="h-[320px]" />
+   479→      </div>
+   480→    </div>
+   481→  )
+   482→}
+   483→
+   484→// ---------------------------------------------------------------------------
+   485→// Period filter bar
+   486→// ---------------------------------------------------------------------------
+   487→
+   488→function PeriodFilterBar({
+   489→  filter,
+   490→  from,
+   491→  to,
+   492→  onFilterChange,
+   493→  onFromChange,
+   494→  onToChange,
+   495→}: {
+   496→  filter: PeriodFilter
+   497→  from: string
+   498→  to: string
+   499→  onFilterChange: (f: PeriodFilter) => void
+   500→  onFromChange: (v: string) => void
+   501→  onToChange: (v: string) => void
+   502→}) {
+   503→  const { t } = useI18n()
+   504→  return (
+   505→    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+   506→      <div className="flex items-center gap-2">
+   507→        <Select value={filter} onValueChange={(v) => onFilterChange(v as PeriodFilter)}>
+   508→          <SelectTrigger className="w-[180px]" size="sm">
+   509→            <SelectValue placeholder={t('common.filter')} />
+   510→          </SelectTrigger>
+   511→          <SelectContent>
+   512→            {FILTER_OPTIONS.map((opt) => (
+   513→              <SelectItem key={opt.value} value={opt.value}>
+   514→                {t(opt.labelKey)}
+   515→              </SelectItem>
+   516→            ))}
+   517→          </SelectContent>
+   518→        </Select>
+   519→      </div>
+   520→      {filter === 'custom_range' && (
+   521→        <div className="flex flex-wrap items-center gap-2">
+   522→          <div className="flex items-center gap-1.5">
+   523→            <label className="whitespace-nowrap text-xs text-muted-foreground">{t('common.from')}</label>
+   524→            <Input
+   525→              type="date"
+   526→              value={from}
+   527→              onChange={(e) => onFromChange(e.target.value)}
+   528→              className="h-8 w-[150px]"
+   529→            />
+   530→          </div>
+   531→          <div className="flex items-center gap-1.5">
+   532→            <label className="whitespace-nowrap text-xs text-muted-foreground">{t('common.to')}</label>
+   533→            <Input
+   534→              type="date"
+   535→              value={to}
+   536→              onChange={(e) => onToChange(e.target.value)}
+   537→              className="h-8 w-[150px]"
+   538→            />
+   539→          </div>
+   540→        </div>
+   541→      )}
+   542→    </div>
+   543→  )
+   544→}
+   545→
+   546→// ---------------------------------------------------------------------------
+   547→// Section: Income
+   548→// ---------------------------------------------------------------------------
+   549→
+   550→function IncomeSection({ data, loading }: { data?: IncomeData; loading: boolean }) {
+   551→  const { t, money, locale } = useI18n()
+   552→  const noData = t('dash.noData')
+   553→
+   554→  const monthly = useMemo(
+   555→    () =>
+   556→      (data?.monthly ?? []).map((m) => ({
+   557→        month: m.month,
+   558→        amount: asNumber(m.amount),
+   559→      })),
+   560→    [data?.monthly]
+   561→  )
+   562→  const byCategory = useMemo(
+   563→    () =>
+   564→      (data?.byCategory ?? []).map((c) => ({
+   565→        name: c.name,
+   566→        value: asNumber(c.amount),
+   567→        color: safeColor(c.color),
+   568→      })),
+   569→    [data?.byCategory]
+   570→  )
+   571→  const byArticle = useMemo(
+   572→    () =>
+   573→      (data?.byArticle ?? []).map((a) => ({
+   574→        name: a.name,
+   575→        amount: asNumber(a.amount),
+   576→      })),
+   577→    [data?.byArticle]
+   578→  )
+   579→  const byWallet = useMemo(
+   580→    () =>
+   581→      (data?.byWallet ?? []).map((w) => ({
+   582→        name: w.name,
+   583→        amount: asNumber(w.amount),
+   584→        color: safeColor(w.color),
+   585→      })),
+   586→    [data?.byWallet]
+   587→  )
+   588→
+   589→  const concentration = data?.sourceConcentration ?? 0
+   590→
+   591→  if (loading) return <AnalyticsSkeleton />
+   592→
+   593→  return (
+   594→    <div className="space-y-4">
+   595→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   596→        <StatCard
+   597→          label={t('common.total')}
+   598→          value={money(data?.total)}
+   599→          icon={TrendingUp}
+   600→          tone="income"
+   601→        />
+   602→        <StatCard
+   603→          label={t('analytics.average')}
+   604→          value={money(data?.average)}
+   605→          icon={CalendarClock}
+   606→          tone="default"
+   607→        />
+   608→        <StatCard
+   609→          label={t('analytics.largest')}
+   610→          value={data?.largest ? money(data.largest.amount) : money('0')}
+   611→          hint={data?.largest?.name ?? data?.largest?.categoryName ?? undefined}
+   612→          icon={Trophy}
+   613→          tone="info"
+   614→        />
+   615→        <StatCard
+   616→          label={t('analytics.savingsRate')}
+   617→          value={`${concentration.toFixed(1)}%`}
+   618→          hint={data?.byCategory?.[0]?.name ?? undefined}
+   619→          icon={Percent}
+   620→          tone="warning"
+   621→        />
+   622→      </div>
+   623→
+   624→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   625→        <ChartCard title={t('analytics.monthlyTrend')}>
+   626→          {monthly.length === 0 ? (
+   627→            <ChartEmpty noData={noData} />
+   628→          ) : (
+   629→            <ResponsiveContainer width="100%" height={260}>
+   630→              <AreaChart data={monthly} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+   631→                <defs>
+   632→                  <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
+   633→                    <stop offset="0%" stopColor={INCOME_COLOR} stopOpacity={0.35} />
+   634→                    <stop offset="100%" stopColor={INCOME_COLOR} stopOpacity={0} />
+   635→                  </linearGradient>
+   636→                </defs>
+   637→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+   638→                <XAxis
+   639→                  dataKey="month"
+   640→                  tickFormatter={(m) => formatMonthLabel(String(m), locale)}
+   641→                  tick={{ fontSize: 11 }}
+   642→                  stroke="var(--muted-foreground)"
+   643→                />
+   644→                <YAxis
+   645→                  tickFormatter={(v) => money(v as number)}
+   646→                  tick={{ fontSize: 11 }}
+   647→                  stroke="var(--muted-foreground)"
+   648→                  width={90}
+   649→                />
+   650→                <RechartsTooltip
+   651→                  content={(props) => (
+   652→                    <MoneyTooltip
+   653→                      {...props}
+   654→                      money={money}
+   655→                      labelFormatter={(l) => formatMonthLabel(String(l), locale)}
+   656→                    />
+   657→                  )}
+   658→                />
+   659→                <Area
+   660→                  type="monotone"
+   661→                  dataKey="amount"
+   662→                  name={t('analytics.income')}
+   663→                  stroke={INCOME_COLOR}
+   664→                  strokeWidth={2}
+   665→                  fill="url(#incomeGrad)"
+   666→                />
+   667→              </AreaChart>
+   668→            </ResponsiveContainer>
+   669→          )}
+   670→        </ChartCard>
+   671→
+   672→        <ChartCard title={t('analytics.byCategory')}>
+   673→          {byCategory.length === 0 ? (
+   674→            <ChartEmpty noData={noData} />
+   675→          ) : (
+   676→            <ResponsiveContainer width="100%" height={260}>
+   677→              <PieChart>
+   678→                <Pie
+   679→                  data={byCategory}
+   680→                  dataKey="value"
+   681→                  nameKey="name"
+   682→                  innerRadius={60}
+   683→                  outerRadius={95}
+   684→                  paddingAngle={2}
+   685→                >
+   686→                  {byCategory.map((entry, i) => (
+   687→                    <Cell key={i} fill={entry.color} />
+   688→                  ))}
+   689→                </Pie>
+   690→                <RechartsTooltip
+   691→                  content={(props) => <MoneyTooltip {...props} money={money} />}
+   692→                />
+   693→                <Legend wrapperStyle={{ fontSize: 11 }} />
+   694→              </PieChart>
+   695→            </ResponsiveContainer>
+   696→          )}
+   697→        </ChartCard>
+   698→
+   699→        <ChartCard title={t('analytics.byArticle')}>
+   700→          {byArticle.length === 0 ? (
+   701→            <ChartEmpty noData={noData} />
+   702→          ) : (
+   703→            <ResponsiveContainer width="100%" height={260}>
+   704→              <BarChart
+   705→                data={byArticle}
+   706→                layout="vertical"
+   707→                margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+   708→              >
+   709→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+   710→                <XAxis
+   711→                  type="number"
+   712→                  tickFormatter={(v) => money(v as number)}
+   713→                  tick={{ fontSize: 11 }}
+   714→                  stroke="var(--muted-foreground)"
+   715→                />
+   716→                <YAxis
+   717→                  type="category"
+   718→                  dataKey="name"
+   719→                  tick={{ fontSize: 11 }}
+   720→                  stroke="var(--muted-foreground)"
+   721→                  width={120}
+   722→                />
+   723→                <RechartsTooltip
+   724→                  content={(props) => <MoneyTooltip {...props} money={money} />}
+   725→                />
+   726→                <Bar dataKey="amount" name={t('common.amount')} radius={[0, 4, 4, 0]} fill={INCOME_COLOR} />
+   727→              </BarChart>
+   728→            </ResponsiveContainer>
+   729→          )}
+   730→        </ChartCard>
+   731→
+   732→        <ChartCard title={t('analytics.byWallet')}>
+   733→          {byWallet.length === 0 ? (
+   734→            <ChartEmpty noData={noData} />
+   735→          ) : (
+   736→            <ResponsiveContainer width="100%" height={260}>
+   737→              <BarChart
+   738→                data={byWallet}
+   739→                layout="vertical"
+   740→                margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+   741→              >
+   742→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+   743→                <XAxis
+   744→                  type="number"
+   745→                  tickFormatter={(v) => money(v as number)}
+   746→                  tick={{ fontSize: 11 }}
+   747→                  stroke="var(--muted-foreground)"
+   748→                />
+   749→                <YAxis
+   750→                  type="category"
+   751→                  dataKey="name"
+   752→                  tick={{ fontSize: 11 }}
+   753→                  stroke="var(--muted-foreground)"
+   754→                  width={120}
+   755→                />
+   756→                <RechartsTooltip
+   757→                  content={(props) => <MoneyTooltip {...props} money={money} />}
+   758→                />
+   759→                <Bar dataKey="amount" name={t('common.amount')} radius={[0, 4, 4, 0]}>
+   760→                  {byWallet.map((entry, i) => (
+   761→                    <Cell key={i} fill={entry.color} />
+   762→                  ))}
+   763→                </Bar>
+   764→              </BarChart>
+   765→            </ResponsiveContainer>
+   766→          )}
+   767→        </ChartCard>
+   768→      </div>
+   769→
+   770→      {/* Source concentration */}
+   771→      <ChartCard title={`${t('analytics.savingsRate')} — ${data?.byCategory?.[0]?.name ?? '—'}`}>
+   772→        <div className="space-y-2">
+   773→          <div className="flex items-baseline justify-between">
+   774→            <span className="text-sm text-muted-foreground">
+   775→              {data?.byCategory?.[0]?.name ?? '—'}
+   776→            </span>
+   777→            <span className="text-lg font-semibold tabular-nums text-income">
+   778→              {concentration.toFixed(1)}%
+   779→            </span>
+   780→          </div>
+   781→          <Progress value={concentration} className="h-3" />
+   782→        </div>
+   783→      </ChartCard>
+   784→    </div>
+   785→  )
+   786→}
+   787→
+   788→// ---------------------------------------------------------------------------
+   789→// Section: Expenses
+   790→// ---------------------------------------------------------------------------
+   791→
+   792→function ExpensesSection({ data, loading }: { data?: ExpenseData; loading: boolean }) {
+   793→  const { t, money, locale } = useI18n()
+   794→  const noData = t('dash.noData')
+   795→
+   796→  const monthly = useMemo(
+   797→    () =>
+   798→      (data?.monthly ?? []).map((m) => ({
+   799→        month: m.month,
+   800→        amount: asNumber(m.amount),
+   801→      })),
+   802→    [data?.monthly]
+   803→  )
+   804→  const byCategory = useMemo(
+   805→    () =>
+   806→      (data?.byCategory ?? []).map((c) => ({
+   807→        name: c.name,
+   808→        value: asNumber(c.amount),
+   809→        color: safeColor(c.color),
+   810→      })),
+   811→    [data?.byCategory]
+   812→  )
+   813→  const byArticle = useMemo(
+   814→    () =>
+   815→      (data?.byArticle ?? []).map((a) => ({
+   816→        name: a.name,
+   817→        amount: asNumber(a.amount),
+   818→      })),
+   819→    [data?.byArticle]
+   820→  )
+   821→  const byWallet = useMemo(
+   822→    () =>
+   823→      (data?.byWallet ?? []).map((w) => ({
+   824→        name: w.name,
+   825→        amount: asNumber(w.amount),
+   826→        color: safeColor(w.color),
+   827→      })),
+   828→    [data?.byWallet]
+   829→  )
+   830→
+   831→  if (loading) return <AnalyticsSkeleton />
+   832→
+   833→  return (
+   834→    <div className="space-y-4">
+   835→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   836→        <StatCard
+   837→          label={t('common.total')}
+   838→          value={money(data?.total)}
+   839→          icon={TrendingDown}
+   840→          tone="expense"
+   841→        />
+   842→        <StatCard
+   843→          label={t('analytics.average')}
+   844→          value={money(data?.average)}
+   845→          icon={CalendarClock}
+   846→          tone="default"
+   847→        />
+   848→        <StatCard
+   849→          label={t('analytics.largest')}
+   850→          value={data?.largest ? money(data.largest.amount) : money('0')}
+   851→          hint={data?.largest?.name ?? data?.largest?.categoryName ?? undefined}
+   852→          icon={Trophy}
+   853→          tone="warning"
+   854→        />
+   855→        <StatCard
+   856→          label={t('analytics.savingsRate')}
+   857→          value={`${(data?.savingsRate ?? 0).toFixed(1)}%`}
+   858→          icon={Percent}
+   859→          tone="info"
+   860→        />
+   861→      </div>
+   862→
+   863→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   864→        <ChartCard title={t('analytics.monthlyTrend')}>
+   865→          {monthly.length === 0 ? (
+   866→            <ChartEmpty noData={noData} />
+   867→          ) : (
+   868→            <ResponsiveContainer width="100%" height={260}>
+   869→              <AreaChart data={monthly} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+   870→                <defs>
+   871→                  <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
+   872→                    <stop offset="0%" stopColor={EXPENSE_COLOR} stopOpacity={0.35} />
+   873→                    <stop offset="100%" stopColor={EXPENSE_COLOR} stopOpacity={0} />
+   874→                  </linearGradient>
+   875→                </defs>
+   876→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+   877→                <XAxis
+   878→                  dataKey="month"
+   879→                  tickFormatter={(m) => formatMonthLabel(String(m), locale)}
+   880→                  tick={{ fontSize: 11 }}
+   881→                  stroke="var(--muted-foreground)"
+   882→                />
+   883→                <YAxis
+   884→                  tickFormatter={(v) => money(v as number)}
+   885→                  tick={{ fontSize: 11 }}
+   886→                  stroke="var(--muted-foreground)"
+   887→                  width={90}
+   888→                />
+   889→                <RechartsTooltip
+   890→                  content={(props) => (
+   891→                    <MoneyTooltip
+   892→                      {...props}
+   893→                      money={money}
+   894→                      labelFormatter={(l) => formatMonthLabel(String(l), locale)}
+   895→                    />
+   896→                  )}
+   897→                />
+   898→                <Area
+   899→                  type="monotone"
+   900→                  dataKey="amount"
+   901→                  name={t('analytics.expenses')}
+   902→                  stroke={EXPENSE_COLOR}
+   903→                  strokeWidth={2}
+   904→                  fill="url(#expenseGrad)"
+   905→                />
+   906→              </AreaChart>
+   907→            </ResponsiveContainer>
+   908→          )}
+   909→        </ChartCard>
+   910→
+   911→        <ChartCard title={t('analytics.byCategory')}>
+   912→          {byCategory.length === 0 ? (
+   913→            <ChartEmpty noData={noData} />
+   914→          ) : (
+   915→            <ResponsiveContainer width="100%" height={260}>
+   916→              <PieChart>
+   917→                <Pie
+   918→                  data={byCategory}
+   919→                  dataKey="value"
+   920→                  nameKey="name"
+   921→                  innerRadius={60}
+   922→                  outerRadius={95}
+   923→                  paddingAngle={2}
+   924→                >
+   925→                  {byCategory.map((entry, i) => (
+   926→                    <Cell key={i} fill={entry.color} />
+   927→                  ))}
+   928→                </Pie>
+   929→                <RechartsTooltip
+   930→                  content={(props) => <MoneyTooltip {...props} money={money} />}
+   931→                />
+   932→                <Legend wrapperStyle={{ fontSize: 11 }} />
+   933→              </PieChart>
+   934→            </ResponsiveContainer>
+   935→          )}
+   936→        </ChartCard>
+   937→
+   938→        <ChartCard title={t('analytics.byArticle')}>
+   939→          {byArticle.length === 0 ? (
+   940→            <ChartEmpty noData={noData} />
+   941→          ) : (
+   942→            <ResponsiveContainer width="100%" height={260}>
+   943→              <BarChart data={byArticle} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+   944→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+   945→                <XAxis type="number" tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+   946→                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={120} />
+   947→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+   948→                <Bar dataKey="amount" name={t('common.amount')} radius={[0, 4, 4, 0]} fill={EXPENSE_COLOR} />
+   949→              </BarChart>
+   950→            </ResponsiveContainer>
+   951→          )}
+   952→        </ChartCard>
+   953→
+   954→        <ChartCard title={t('analytics.byWallet')}>
+   955→          {byWallet.length === 0 ? (
+   956→            <ChartEmpty noData={noData} />
+   957→          ) : (
+   958→            <ResponsiveContainer width="100%" height={260}>
+   959→              <BarChart data={byWallet} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+   960→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+   961→                <XAxis type="number" tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+   962→                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={120} />
+   963→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+   964→                <Bar dataKey="amount" name={t('common.amount')} radius={[0, 4, 4, 0]}>
+   965→                  {byWallet.map((entry, i) => (
+   966→                    <Cell key={i} fill={entry.color} />
+   967→                  ))}
+   968→                </Bar>
+   969→              </BarChart>
+   970→            </ResponsiveContainer>
+   971→          )}
+   972→        </ChartCard>
+   973→      </div>
+   974→
+   975→      {data?.budgetComparison && data.budgetComparison.hasBudgets === false && (
+   976→        <ChartCard title={t('dash.budgetUsage')}>
+   977→          <div className="text-sm text-muted-foreground py-6 text-center">
+   978→            {data.budgetComparison.message ?? t('dash.noData')}
+   979→          </div>
+   980→        </ChartCard>
+   981→      )}
+   982→    </div>
+   983→  )
+   984→}
+   985→
+   986→// ---------------------------------------------------------------------------
+   987→// Section: Wallets
+   988→// ---------------------------------------------------------------------------
+   989→
+   990→function WalletsSection({ data, loading }: { data?: WalletsData; loading: boolean }) {
+   991→  const { t, money, locale, date: fmtDate } = useI18n()
+   992→  const noData = t('dash.noData')
+   993→
+   994→  const currentByWallet = useMemo(
+   995→    () =>
+   996→      (data?.currentByWallet ?? []).map((w) => ({
+   997→        name: w.name,
+   998→        balance: asNumber(w.balance),
+   999→        color: safeColor(w.color, WALLET_TYPE_COLORS[w.type] ?? MUTED_COLOR),
+  1000→        type: w.type,
+  1001→      })),
+  1002→    [data?.currentByWallet]
+  1003→  )
+  1004→
+  1005→  const bankVsCash = useMemo(() => {
+  1006→    const d = data?.bankVsCash
+  1007→    return [
+  1008→      { name: t('wal.bank') || 'Bank', value: asNumber(d?.bank), color: WALLET_TYPE_COLORS.bank },
+  1009→      { name: t('wal.cash') || 'Cash', value: asNumber(d?.cash), color: WALLET_TYPE_COLORS.cash },
+  1010→      { name: t('wal.savings') || 'Savings', value: asNumber(d?.savings), color: WALLET_TYPE_COLORS.savings },
+  1011→      { name: t('common.type') || 'Other', value: asNumber(d?.other), color: WALLET_TYPE_COLORS.other },
+  1012→    ].filter((d) => d.value !== 0)
+  1013→  }, [data?.bankVsCash, t])
+  1014→
+  1015→  const evolution = useMemo(
+  1016→    () =>
+  1017→      (data?.historicalEvolution ?? []).map((e) => ({
+  1018→        date: e.date,
+  1019→        total: asNumber(e.total),
+  1020→      })),
+  1021→    [data?.historicalEvolution]
+  1022→  )
+  1023→
+  1024→  const flows = useMemo(() => {
+  1025→    const inflows = (data?.inflows ?? []).map((w) => ({
+  1026→      name: w.name,
+  1027→      inflow: asNumber(w.amount),
+  1028→      outflow: 0,
+  1029→    }))
+  1030→    const outflows = (data?.outflows ?? []).map((w) => ({
+  1031→      name: w.name,
+  1032→      inflow: 0,
+  1033→      outflow: asNumber(w.amount),
+  1034→    }))
+  1035→    const merged = new Map<string, { name: string; inflow: number; outflow: number }>()
+  1036→    for (const r of [...inflows, ...outflows]) {
+  1037→      const cur = merged.get(r.name) ?? { name: r.name, inflow: 0, outflow: 0 }
+  1038→      cur.inflow += r.inflow
+  1039→      cur.outflow += r.outflow
+  1040→      merged.set(r.name, cur)
+  1041→    }
+  1042→    return Array.from(merged.values())
+  1043→  }, [data?.inflows, data?.outflows])
+  1044→
+  1045→  if (loading) return <AnalyticsSkeleton />
+  1046→
+  1047→  return (
+  1048→    <div className="space-y-4">
+  1049→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  1050→        <StatCard
+  1051→          label={t('common.balance')}
+  1052→          value={money(
+  1053→            (data?.currentByWallet ?? [])
+  1054→              .reduce((acc, w) => acc + asNumber(w.balance), 0)
+  1055→              .toFixed(2)
+  1056→          )}
+  1057→          icon={WalletIcon}
+  1058→          tone="default"
+  1059→        />
+  1060→        <StatCard
+  1061→          label={t('wal.bank')}
+  1062→          value={money(data?.bankVsCash?.bank)}
+  1063→          icon={Banknote}
+  1064→          tone="info"
+  1065→        />
+  1066→        <StatCard
+  1067→          label={t('wal.cash')}
+  1068→          value={money(data?.bankVsCash?.cash)}
+  1069→          icon={Coins}
+  1070→          tone="warning"
+  1071→        />
+  1072→        <StatCard
+  1073→          label={t('wal.savings')}
+  1074→          value={money(data?.bankVsCash?.savings)}
+  1075→          icon={PiggyBank}
+  1076→          tone="income"
+  1077→        />
+  1078→      </div>
+  1079→
+  1080→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1081→        <ChartCard title={t('analytics.byWallet')}>
+  1082→          {currentByWallet.length === 0 ? (
+  1083→            <ChartEmpty noData={noData} />
+  1084→          ) : (
+  1085→            <ResponsiveContainer width="100%" height={300}>
+  1086→              <BarChart data={currentByWallet} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+  1087→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+  1088→                <XAxis type="number" tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+  1089→                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={120} />
+  1090→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+  1091→                <Bar dataKey="balance" name={t('common.balance')} radius={[0, 4, 4, 0]}>
+  1092→                  {currentByWallet.map((entry, i) => (
+  1093→                    <Cell key={i} fill={entry.color} />
+  1094→                  ))}
+  1095→                </Bar>
+  1096→              </BarChart>
+  1097→            </ResponsiveContainer>
+  1098→          )}
+  1099→        </ChartCard>
+  1100→
+  1101→        <ChartCard title={t('analytics.byCategory')}>
+  1102→          {bankVsCash.length === 0 ? (
+  1103→            <ChartEmpty noData={noData} />
+  1104→          ) : (
+  1105→            <ResponsiveContainer width="100%" height={300}>
+  1106→              <PieChart>
+  1107→                <Pie data={bankVsCash} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+  1108→                  {bankVsCash.map((entry, i) => (
+  1109→                    <Cell key={i} fill={entry.color} />
+  1110→                  ))}
+  1111→                </Pie>
+  1112→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+  1113→                <Legend wrapperStyle={{ fontSize: 11 }} />
+  1114→              </PieChart>
+  1115→            </ResponsiveContainer>
+  1116→          )}
+  1117→        </ChartCard>
+  1118→
+  1119→        <ChartCard title={t('analytics.historicalBalance')}>
+  1120→          {evolution.length === 0 ? (
+  1121→            <ChartEmpty noData={noData} />
+  1122→          ) : (
+  1123→            <ResponsiveContainer width="100%" height={300}>
+  1124→              <LineChart data={evolution} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+  1125→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+  1126→                <XAxis
+  1127→                  dataKey="date"
+  1128→                  tickFormatter={(d) => formatTrendDate(String(d), locale)}
+  1129→                  tick={{ fontSize: 11 }}
+  1130→                  stroke="var(--muted-foreground)"
+  1131→                />
+  1132→                <YAxis tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={90} />
+  1133→                <RechartsTooltip
+  1134→                  content={(props) => (
+  1135→                    <MoneyTooltip
+  1136→                      {...props}
+  1137→                      money={money}
+  1138→                      labelFormatter={(l) => (l ? fmtDate(String(l)) : '')}
+  1139→                    />
+  1140→                  )}
+  1141→                />
+  1142→                <Line
+  1143→                  type="monotone"
+  1144→                  dataKey="total"
+  1145→                  name={t('common.balance')}
+  1146→                  stroke={INFO_COLOR}
+  1147→                  strokeWidth={2}
+  1148→                  dot={{ r: 3 }}
+  1149→                />
+  1150→              </LineChart>
+  1151→            </ResponsiveContainer>
+  1152→          )}
+  1153→        </ChartCard>
+  1154→
+  1155→        <ChartCard title={t('analytics.inflowsOutflows')}>
+  1156→          {flows.length === 0 ? (
+  1157→            <ChartEmpty noData={noData} />
+  1158→          ) : (
+  1159→            <ResponsiveContainer width="100%" height={300}>
+  1160→              <BarChart data={flows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+  1161→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+  1162→                <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+  1163→                <YAxis tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={90} />
+  1164→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+  1165→                <Legend wrapperStyle={{ fontSize: 11 }} />
+  1166→                <Bar dataKey="inflow" name={t('analytics.income')} stackId="a" fill={INCOME_COLOR} radius={[4, 4, 0, 0]} />
+  1167→                <Bar dataKey="outflow" name={t('analytics.expenses')} stackId="a" fill={EXPENSE_COLOR} />
+  1168→              </BarChart>
+  1169→            </ResponsiveContainer>
+  1170→          )}
+  1171→        </ChartCard>
+  1172→      </div>
+  1173→    </div>
+  1174→  )
+  1175→}
+  1176→
+  1177→// ---------------------------------------------------------------------------
+  1178→// Section: Cash Withdrawals
+  1179→// ---------------------------------------------------------------------------
+  1180→
+  1181→function CashWithdrawalsSection({ data, loading }: { data?: CashWithdrawalsData; loading: boolean }) {
+  1182→  const { t, money } = useI18n()
+  1183→  const noData = t('dash.noData')
+  1184→
+  1185→  const byWallet = useMemo(
+  1186→    () =>
+  1187→      (data?.byWallet ?? []).map((w) => ({
+  1188→        name: w.name,
+  1189→        amount: asNumber(w.amount),
+  1190→        color: safeColor(w.color, WARNING_COLOR),
+  1191→      })),
+  1192→    [data?.byWallet]
+  1193→  )
+  1194→
+  1195→  if (loading) return <AnalyticsSkeleton />
+  1196→
+  1197→  return (
+  1198→    <div className="space-y-4">
+  1199→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  1200→        <StatCard
+  1201→          label={t('common.total')}
+  1202→          value={money(data?.total)}
+  1203→          icon={ArrowDownToLine}
+  1204→          tone="warning"
+  1205→        />
+  1206→        <StatCard
+  1207→          label={t('tx.count')}
+  1208→          value={String(data?.count ?? 0)}
+  1209→          icon={Hash}
+  1210→          tone="default"
+  1211→        />
+  1212→        <StatCard
+  1213→          label={t('analytics.average')}
+  1214→          value={money(
+  1215→            data && data.count > 0
+  1216→              ? (asNumber(data.total) / data.count).toFixed(2)
+  1217→              : '0'
+  1218→          )}
+  1219→          icon={CalendarClock}
+  1220→          tone="info"
+  1221→        />
+  1222→      </div>
+  1223→
+  1224→      <ChartCard title={t('analytics.byWallet')}>
+  1225→        {byWallet.length === 0 ? (
+  1226→          <ChartEmpty noData={noData} />
+  1227→        ) : (
+  1228→          <ResponsiveContainer width="100%" height={300}>
+  1229→            <BarChart data={byWallet} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+  1230→              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+  1231→              <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+  1232→              <YAxis tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={90} />
+  1233→              <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+  1234→              <Bar dataKey="amount" name={t('common.amount')} radius={[4, 4, 0, 0]}>
+  1235→                {byWallet.map((entry, i) => (
+  1236→                  <Cell key={i} fill={entry.color} />
+  1237→                ))}
+  1238→              </Bar>
+  1239→            </BarChart>
+  1240→          </ResponsiveContainer>
+  1241→        )}
+  1242→      </ChartCard>
+  1243→    </div>
+  1244→  )
+  1245→}
+  1246→
+  1247→// ---------------------------------------------------------------------------
+  1248→// Section: Transfers
+  1249→// ---------------------------------------------------------------------------
+  1250→
+  1251→function TransfersSection({ data, loading }: { data?: TransfersData; loading: boolean }) {
+  1252→  const { t, money } = useI18n()
+  1253→  const noData = t('dash.noData')
+  1254→
+  1255→  const bySource = useMemo(
+  1256→    () =>
+  1257→      (data?.bySource ?? []).map((w) => ({
+  1258→        name: w.name,
+  1259→        amount: asNumber(w.amount),
+  1260→        color: safeColor(w.color, EXPENSE_COLOR),
+  1261→      })),
+  1262→    [data?.bySource]
+  1263→  )
+  1264→  const byDest = useMemo(
+  1265→    () =>
+  1266→      (data?.byDest ?? []).map((w) => ({
+  1267→        name: w.name,
+  1268→        amount: asNumber(w.amount),
+  1269→        color: safeColor(w.color, INCOME_COLOR),
+  1270→      })),
+  1271→    [data?.byDest]
+  1272→  )
+  1273→
+  1274→  if (loading) return <AnalyticsSkeleton />
+  1275→
+  1276→  return (
+  1277→    <div className="space-y-4">
+  1278→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  1279→        <StatCard
+  1280→          label={t('common.total')}
+  1281→          value={money(data?.total)}
+  1282→          icon={ArrowLeftRight}
+  1283→          tone="default"
+  1284→        />
+  1285→        <StatCard
+  1286→          label={t('tx.count')}
+  1287→          value={String(data?.count ?? 0)}
+  1288→          icon={Hash}
+  1289→          tone="info"
+  1290→        />
+  1291→        <StatCard
+  1292→          label={t('analytics.average')}
+  1293→          value={money(
+  1294→            data && data.count > 0
+  1295→              ? (asNumber(data.total) / data.count).toFixed(2)
+  1296→              : '0'
+  1297→          )}
+  1298→          icon={CalendarClock}
+  1299→          tone="default"
+  1300→        />
+  1301→      </div>
+  1302→
+  1303→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1304→        <ChartCard title={`${t('analytics.byWallet')} — ${t('transfer.source')}`}>
+  1305→          {bySource.length === 0 ? (
+  1306→            <ChartEmpty noData={noData} />
+  1307→          ) : (
+  1308→            <ResponsiveContainer width="100%" height={260}>
+  1309→              <BarChart data={bySource} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+  1310→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+  1311→                <XAxis type="number" tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+  1312→                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={120} />
+  1313→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+  1314→                <Bar dataKey="amount" name={t('common.amount')} radius={[0, 4, 4, 0]}>
+  1315→                  {bySource.map((entry, i) => (
+  1316→                    <Cell key={i} fill={entry.color} />
+  1317→                  ))}
+  1318→                </Bar>
+  1319→              </BarChart>
+  1320→            </ResponsiveContainer>
+  1321→          )}
+  1322→        </ChartCard>
+  1323→
+  1324→        <ChartCard title={`${t('analytics.byWallet')} — ${t('common.to')}`}>
+  1325→          {byDest.length === 0 ? (
+  1326→            <ChartEmpty noData={noData} />
+  1327→          ) : (
+  1328→            <ResponsiveContainer width="100%" height={260}>
+  1329→              <BarChart data={byDest} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+  1330→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+  1331→                <XAxis type="number" tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+  1332→                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={120} />
+  1333→                <RechartsTooltip content={(props) => <MoneyTooltip {...props} money={money} />} />
+  1334→                <Bar dataKey="amount" name={t('common.amount')} radius={[0, 4, 4, 0]}>
+  1335→                  {byDest.map((entry, i) => (
+  1336→                    <Cell key={i} fill={entry.color} />
+  1337→                  ))}
+  1338→                </Bar>
+  1339→              </BarChart>
+  1340→            </ResponsiveContainer>
+  1341→          )}
+  1342→        </ChartCard>
+  1343→      </div>
+  1344→    </div>
+  1345→  )
+  1346→}
+  1347→
+  1348→// ---------------------------------------------------------------------------
+  1349→// Section: Net Cash Flow
+  1350→// ---------------------------------------------------------------------------
+  1351→
+  1352→function NetCashFlowSection({ data, loading }: { data?: NetCashFlowData; loading: boolean }) {
+  1353→  const { t, money, locale, num } = useI18n()
+  1354→  const noData = t('dash.noData')
+  1355→
+  1356→  const monthly = useMemo(
+  1357→    () =>
+  1358→      (data?.monthly ?? []).map((m) => ({
+  1359→        month: m.month,
+  1360→        income: asNumber(m.income),
+  1361→        expenses: asNumber(m.expenses),
+  1362→        net: asNumber(m.net),
+  1363→      })),
+  1364→    [data?.monthly]
+  1365→  )
+  1366→  const netTrend = useMemo(
+  1367→    () =>
+  1368→      (data?.monthly ?? []).map((m) => ({
+  1369→        month: m.month,
+  1370→        net: asNumber(m.net),
+  1371→      })),
+  1372→    [data?.monthly]
+  1373→  )
+  1374→
+  1375→  if (loading) return <AnalyticsSkeleton />
+  1376→
+  1377→  const netTone = data ? (asNumber(data.net) > 0 ? 'income' : asNumber(data.net) < 0 ? 'expense' : 'default') : 'default'
+  1378→
+  1379→  return (
+  1380→    <div className="space-y-4">
+  1381→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  1382→        <StatCard
+  1383→          label={t('analytics.income')}
+  1384→          value={money(data?.income)}
+  1385→          icon={TrendingUp}
+  1386→          tone="income"
+  1387→        />
+  1388→        <StatCard
+  1389→          label={t('analytics.expenses')}
+  1390→          value={money(data?.expenses)}
+  1391→          icon={TrendingDown}
+  1392→          tone="expense"
+  1393→        />
+  1394→        <StatCard
+  1395→          label={t('analytics.netCashFlow')}
+  1396→          value={money(data?.net)}
+  1397→          icon={Scale}
+  1398→          tone={netTone}
+  1399→        />
+  1400→        <StatCard
+  1401→          label={t('analytics.savingsRate')}
+  1402→          value={`${(data?.savingsRate ?? 0).toFixed(1)}%`}
+  1403→          icon={Percent}
+  1404→          tone="info"
+  1405→        />
+  1406→      </div>
+  1407→
+  1408→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1409→        <ChartCard title={t('analytics.monthlyTrend')}>
+  1410→          {monthly.length === 0 ? (
+  1411→            <ChartEmpty noData={noData} />
+  1412→          ) : (
+  1413→            <ResponsiveContainer width="100%" height={300}>
+  1414→              <BarChart data={monthly} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+  1415→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+  1416→                <XAxis
+  1417→                  dataKey="month"
+  1418→                  tickFormatter={(m) => formatMonthLabel(String(m), locale)}
+  1419→                  tick={{ fontSize: 11 }}
+  1420→                  stroke="var(--muted-foreground)"
+  1421→                />
+  1422→                <YAxis tickFormatter={(v) => money(v as number)} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={90} />
+  1423→                <RechartsTooltip
+  1424→                  content={(props) => (
+  1425→                    <MoneyTooltip
+  1426→                      {...props}
+  1427→                      money={money}
+  1428→                      labelFormatter={(l) => formatMonthLabel(String(l), locale)}
+  1429→                    />
+  1430→                  )}
+  1431→                />
+  1432→                <Legend wrapperStyle={{ fontSize: 11 }} />
+  1433→                <Bar dataKey="income" name={t('analytics.income')} fill={INCOME_COLOR} radius={[4, 4, 0, 0]} />
+  1434→                <Bar dataKey="expenses" name={t('analytics.expenses')} fill={EXPENSE_COLOR} radius={[4, 4, 0, 0]} />
+  1435→                <Bar dataKey="net" name={t('analytics.netCashFlow')} fill={INFO_COLOR} radius={[4, 4, 0, 0]} />
+  1436→              </BarChart>
+  1437→            </ResponsiveContainer>
+  1438→          )}
+  1439→        </ChartCard>
+  1440→
+  1441→        <ChartCard title={t('analytics.netCashFlow')}>
+  1442→          {netTrend.length === 0 ? (
+  1443→            <ChartEmpty noData={noData} />
+  1444→          ) : (
+  1445→            <ResponsiveContainer width="100%" height={300}>
+  1446→              <LineChart data={netTrend} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+  1447→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+  1448→                <XAxis
+  1449→                  dataKey="month"
+  1450→                  tickFormatter={(m) => formatMonthLabel(String(m), locale)}
+  1451→                  tick={{ fontSize: 11 }}
+  1452→                  stroke="var(--muted-foreground)"
+  1453→                />
+  1454→                <YAxis
+  1455→                  tickFormatter={(v) => money(v as number)}
+  1456→                  tick={{ fontSize: 11 }}
+  1457→                  stroke="var(--muted-foreground)"
+  1458→                  width={90}
+  1459→                />
+  1460→                <RechartsTooltip
+  1461→                  content={(props) => (
+  1462→                    <MoneyTooltip
+  1463→                      {...props}
+  1464→                      money={money}
+  1465→                      labelFormatter={(l) => formatMonthLabel(String(l), locale)}
+  1466→                    />
+  1467→                  )}
+  1468→                />
+  1469→                <Line
+  1470→                  type="monotone"
+  1471→                  dataKey="net"
+  1472→                  name={t('analytics.netCashFlow')}
+  1473→                  stroke={INFO_COLOR}
+  1474→                  strokeWidth={2}
+  1475→                  dot={{ r: 3 }}
+  1476→                />
+  1477→              </LineChart>
+  1478→            </ResponsiveContainer>
+  1479→          )}
+  1480→        </ChartCard>
+  1481→      </div>
+  1482→
+  1483→      <ChartCard title={`${t('analytics.savingsRate')} — ${num(data?.savingsRate ?? 0)}%`}>
+  1484→        <Progress value={data?.savingsRate ?? 0} className="h-3" />
+  1485→      </ChartCard>
+  1486→    </div>
+  1487→  )
+  1488→}
+  1489→
+  1490→// ---------------------------------------------------------------------------
+  1491→// Section: Allocations
+  1492→// ---------------------------------------------------------------------------
+  1493→
+  1494→function AllocationsSection({ data, loading }: { data?: AllocationsData; loading: boolean }) {
+  1495→  const { t, money } = useI18n()
+  1496→  const noData = t('dash.noData')
+  1497→
+  1498→  const byClassification = useMemo(
+  1499→    () =>
+  1500→      (data?.byClassification ?? []).map((c) => ({
+  1501→        name: c.classification,
+  1502→        value: asNumber(c.amount),
+  1503→      })),
+  1504→    [data?.byClassification]
+  1505→  )
+  1506→
+  1507→  if (loading) return <AnalyticsSkeleton />
+  1508→
+  1509→  const palette = [INCOME_COLOR, EXPENSE_COLOR, WARNING_COLOR, INFO_COLOR, MUTED_COLOR]
+  1510→
+  1511→  return (
+  1512→    <div className="space-y-4">
+  1513→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  1514→        <StatCard
+  1515→          label={t('alloc.referenceIncome')}
+  1516→          value={money(data?.referenceIncome)}
+  1517→          icon={CircleDollarSign}
+  1518→          tone="default"
+  1519→        />
+  1520→        <StatCard
+  1521→          label={t('alloc.totalActive')}
+  1522→          value={money(data?.totalActive)}
+  1523→          icon={TrendingUp}
+  1524→          tone="income"
+  1525→        />
+  1526→        <StatCard
+  1527→          label={t('alloc.totalPassive')}
+  1528→          value={money(data?.totalPassive)}
+  1529→          icon={TrendingDown}
+  1530→          tone="expense"
+  1531→        />
+  1532→        <StatCard
+  1533→          label={t('alloc.totalAllocated')}
+  1534→          value={money(data?.totalAllocated)}
+  1535→          icon={Layers}
+  1536→          tone="default"
+  1537→        />
+  1538→        <StatCard
+  1539→          label={t('alloc.unallocated')}
+  1540→          value={money(data?.unallocated)}
+  1541→          icon={WalletIcon}
+  1542→          tone="warning"
+  1543→        />
+  1544→        <StatCard
+  1545→          label={t('alloc.available')}
+  1546→          value={money(data?.available)}
+  1547→          icon={Landmark}
+  1548→          tone="info"
+  1549→        />
+  1550→        <StatCard
+  1551→          label={t('alloc.utilization')}
+  1552→          value={`${(data?.utilization ?? 0).toFixed(1)}%`}
+  1553→          icon={Percent}
+  1554→          tone="default"
+  1555→        />
+  1556→      </div>
+  1557→
+  1558→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1559→        <ChartCard title={`${t('alloc.utilization')} — ${(data?.utilization ?? 0).toFixed(1)}%`}>
+  1560→          <Progress value={data?.utilization ?? 0} className="h-4" />
+  1561→        </ChartCard>
+  1562→
+  1563→        <ChartCard title={t('analytics.byCategory')}>
+  1564→          {byClassification.length === 0 ? (
+  1565→            <ChartEmpty noData={noData} />
+  1566→          ) : (
+  1567→            <ResponsiveContainer width="100%" height={260}>
+  1568→              <PieChart>
+  1569→                <Pie
+  1570→                  data={byClassification}
+  1571→                  dataKey="value"
+  1572→                  nameKey="name"
+  1573→                  innerRadius={60}
+  1574→                  outerRadius={95}
+  1575→                  paddingAngle={2}
+  1576→                >
+  1577→                  {byClassification.map((_, i) => (
+  1578→                    <Cell key={i} fill={palette[i % palette.length]} />
+  1579→                  ))}
+  1580→                </Pie>
+  1581→                <RechartsTooltip
+  1582→                  content={(props) => <MoneyTooltip {...props} money={money} />}
+  1583→                />
+  1584→                <Legend wrapperStyle={{ fontSize: 11 }} />
+  1585→              </PieChart>
+  1586→            </ResponsiveContainer>
+  1587→          )}
+  1588→        </ChartCard>
+  1589→      </div>
+  1590→    </div>
+  1591→  )
+  1592→}
+  1593→
+  1594→// ---------------------------------------------------------------------------
+  1595→// Section: Bank Credits
+  1596→// ---------------------------------------------------------------------------
+  1597→
+  1598→function BankCreditsSection({ data, loading }: { data?: BankCreditsData; loading: boolean }) {
+  1599→  const { t, money, date: fmtDate } = useI18n()
+  1600→  const noData = t('dash.noData')
+  1601→
+  1602→  if (loading) return <AnalyticsSkeleton />
+  1603→
+  1604→  const installments = data?.upcomingInstallments ?? []
+  1605→
+  1606→  return (
+  1607→    <div className="space-y-4">
+  1608→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  1609→        <StatCard
+  1610→          label={t('credit.originalPrincipal')}
+  1611→          value={money(data?.originalDebt)}
+  1612→          icon={CreditCard}
+  1613→          tone="default"
+  1614→        />
+  1615→        <StatCard
+  1616→          label={t('credit.totalRepaid')}
+  1617→          value={money(data?.totalRepaid)}
+  1618→          icon={TrendingUp}
+  1619→          tone="income"
+  1620→        />
+  1621→        <StatCard
+  1622→          label={t('credit.outstanding')}
+  1623→          value={money(data?.outstanding)}
+  1624→          icon={TrendingDown}
+  1625→          tone="expense"
+  1626→        />
+  1627→        <StatCard
+  1628→          label={t('common.progress')}
+  1629→          value={`${(data?.progressPct ?? 0).toFixed(1)}%`}
+  1630→          icon={Percent}
+  1631→          tone="info"
+  1632→        />
+  1633→      </div>
+  1634→
+  1635→      <ChartCard title={`${t('common.progress')} — ${(data?.progressPct ?? 0).toFixed(1)}%`}>
+  1636→        <Progress value={data?.progressPct ?? 0} className="h-4" />
+  1637→      </ChartCard>
+  1638→
+  1639→      <ChartCard title={t('dash.upcomingInstallments')}>
+  1640→        {installments.length === 0 ? (
+  1641→          <ChartEmpty noData={noData} />
+  1642→        ) : (
+  1643→          <ScrollArea className="max-h-96">
+  1644→            <Table>
+  1645→              <TableHeader>
+  1646→                <TableRow>
+  1647→                  <TableHead>{t('common.date')}</TableHead>
+  1648→                  <TableHead>{t('credit.creditName')}</TableHead>
+  1649→                  <TableHead className="text-right">#</TableHead>
+  1650→                  <TableHead className="text-right">{t('common.amount')}</TableHead>
+  1651→                  <TableHead className="text-right">{t('common.status')}</TableHead>
+  1652→                </TableRow>
+  1653→              </TableHeader>
+  1654→              <TableBody>
+  1655→                {installments.map((ins, i) => (
+  1656→                  <TableRow key={`${ins.creditId}-${ins.installmentNumber}-${i}`}>
+  1657→                    <TableCell className="whitespace-nowrap">{fmtDate(ins.dueDate)}</TableCell>
+  1658→                    <TableCell className="font-medium">{ins.creditName}</TableCell>
+  1659→                    <TableCell className="text-right tabular-nums">{ins.installmentNumber}</TableCell>
+  1660→                    <TableCell className="text-right tabular-nums">{money(ins.amount)}</TableCell>
+  1661→                    <TableCell className="text-right">
+  1662→                      <Badge variant="outline" className="capitalize">
+  1663→                        {ins.status}
+  1664→                      </Badge>
+  1665→                    </TableCell>
+  1666→                  </TableRow>
+  1667→                ))}
+  1668→              </TableBody>
+  1669→            </Table>
+  1670→          </ScrollArea>
+  1671→        )}
+  1672→      </ChartCard>
+  1673→    </div>
+  1674→  )
+  1675→}
+  1676→
+  1677→// ---------------------------------------------------------------------------
+  1678→// Section: Personal Loans
+  1679→// ---------------------------------------------------------------------------
+  1680→
+  1681→function PersonalLoansSection({ data, loading }: { data?: PersonalLoansData; loading: boolean }) {
+  1682→  const { t, money } = useI18n()
+  1683→  const noData = t('dash.noData')
+  1684→
+  1685→  const byBorrower = data?.progressByBorrower ?? []
+  1686→
+  1687→  if (loading) return <AnalyticsSkeleton />
+  1688→
+  1689→  return (
+  1690→    <div className="space-y-4">
+  1691→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  1692→        <StatCard
+  1693→          label={t('loan.totalLent')}
+  1694→          value={money(data?.totalLent)}
+  1695→          icon={HandCoins}
+  1696→          tone="income"
+  1697→        />
+  1698→        <StatCard
+  1699→          label={t('loan.totalRepaid')}
+  1700→          value={money(data?.totalRepaid)}
+  1701→          icon={TrendingUp}
+  1702→          tone="default"
+  1703→        />
+  1704→        <StatCard
+  1705→          label={t('loan.outstanding')}
+  1706→          value={money(data?.outstanding)}
+  1707→          icon={TrendingDown}
+  1708→          tone="expense"
+  1709→        />
+  1710→        <StatCard
+  1711→          label={t('common.progress')}
+  1712→          value={`${(data?.progressPct ?? 0).toFixed(1)}%`}
+  1713→          icon={Percent}
+  1714→          tone="info"
+  1715→        />
+  1716→      </div>
+  1717→
+  1718→      <ChartCard title={t('loan.borrower')}>
+  1719→        {byBorrower.length === 0 ? (
+  1720→          <ChartEmpty noData={noData} />
+  1721→        ) : (
+  1722→          <ScrollArea className="max-h-96">
+  1723→            <Table>
+  1724→              <TableHeader>
+  1725→                <TableRow>
+  1726→                  <TableHead>{t('loan.borrower')}</TableHead>
+  1727→                  <TableHead className="text-right">{t('loan.totalLent')}</TableHead>
+  1728→                  <TableHead className="text-right">{t('loan.totalRepaid')}</TableHead>
+  1729→                  <TableHead className="text-right">{t('loan.outstanding')}</TableHead>
+  1730→                  <TableHead className="w-[160px]">{t('common.progress')}</TableHead>
+  1731→                </TableRow>
+  1732→              </TableHeader>
+  1733→              <TableBody>
+  1734→                {byBorrower.map((b) => (
+  1735→                  <TableRow key={b.loanId}>
+  1736→                    <TableCell className="font-medium">{b.borrowerName}</TableCell>
+  1737→                    <TableCell className="text-right tabular-nums">{money(b.lent)}</TableCell>
+  1738→                    <TableCell className="text-right tabular-nums text-income">{money(b.repaid)}</TableCell>
+  1739→                    <TableCell className="text-right tabular-nums text-expense">{money(b.outstanding)}</TableCell>
+  1740→                    <TableCell>
+  1741→                      <div className="flex items-center gap-2">
+  1742→                        <Progress value={b.progressPct} className="h-2 flex-1" />
+  1743→                        <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
+  1744→                          {b.progressPct.toFixed(0)}%
+  1745→                        </span>
+  1746→                      </div>
+  1747→                    </TableCell>
+  1748→                  </TableRow>
+  1749→                ))}
+  1750→              </TableBody>
+  1751→            </Table>
+  1752→          </ScrollArea>
+  1753→        )}
+  1754→      </ChartCard>
+  1755→    </div>
+  1756→  )
+  1757→}
+  1758→
+  1759→// ---------------------------------------------------------------------------
+  1760→// Section: Goals
+  1761→// ---------------------------------------------------------------------------
+  1762→
+  1763→function GoalsSection({ data, loading }: { data?: GoalsData; loading: boolean }) {
+  1764→  const { t, money, locale, num } = useI18n()
+  1765→  const noData = t('dash.noData')
+  1766→
+  1767→  const byYear = useMemo(
+  1768→    () =>
+  1769→      (data?.progressByYear ?? []).map((y) => ({
+  1770→        year: String(y.year),
+  1771→        progress: y.overallProgress,
+  1772→        count: y.count,
+  1773→      })),
+  1774→    [data?.progressByYear]
+  1775→  )
+  1776→
+  1777→  const categoryComparison = useMemo(
+  1778→    () =>
+  1779→      (data?.categoryComparison ?? []).map((c) => ({
+  1780→        name: c.categoryName,
+  1781→        progress: c.avgProgress,
+  1782→        count: c.count,
+  1783→        color: safeColor(c.color),
+  1784→      })),
+  1785→    [data?.categoryComparison]
+  1786→  )
+  1787→
+  1788→  if (loading) return <AnalyticsSkeleton />
+  1789→
+  1790→  return (
+  1791→    <div className="space-y-4">
+  1792→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  1793→        <StatCard
+  1794→          label={t('goal.requiredTotal')}
+  1795→          value={money(data?.budgetProgress?.required)}
+  1796→          icon={Target}
+  1797→          tone="default"
+  1798→        />
+  1799→        <StatCard
+  1800→          label={t('goal.savedTotal')}
+  1801→          value={money(data?.budgetProgress?.saved)}
+  1802→          icon={TrendingUp}
+  1803→          tone="income"
+  1804→        />
+  1805→        <StatCard
+  1806→          label={t('goal.remainingTotal')}
+  1807→          value={money(data?.budgetProgress?.remaining)}
+  1808→          icon={TrendingDown}
+  1809→          tone="warning"
+  1810→        />
+  1811→        <StatCard
+  1812→          label={t('analytics.savingsRate')}
+  1813→          value={`${(data?.completionRate ?? 0).toFixed(1)}%`}
+  1814→          hint={
+  1815→            data
+  1816→              ? `${num(data.completedGoals)} / ${num(data.totalGoals)}`
+  1817→              : undefined
+  1818→          }
+  1819→          icon={Trophy}
+  1820→          tone="info"
+  1821→        />
+  1822→      </div>
+  1823→
+  1824→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1825→        <ChartCard title={t('analytics.yearlyTrend')}>
+  1826→          {byYear.length === 0 ? (
+  1827→            <ChartEmpty noData={noData} />
+  1828→          ) : (
+  1829→            <ResponsiveContainer width="100%" height={300}>
+  1830→              <BarChart data={byYear} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+  1831→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+  1832→                <XAxis
+  1833→                  dataKey="year"
+  1834→                  tickFormatter={(y) => formatYearLabel(Number(y), locale)}
+  1835→                  tick={{ fontSize: 11 }}
+  1836→                  stroke="var(--muted-foreground)"
+  1837→                />
+  1838→                <YAxis
+  1839→                  domain={[0, 100]}
+  1840→                  tickFormatter={(v) => `${v}%`}
+  1841→                  tick={{ fontSize: 11 }}
+  1842→                  stroke="var(--muted-foreground)"
+  1843→                  width={50}
+  1844→                />
+  1845→                <RechartsTooltip
+  1846→                  content={(props) => (
+  1847→                    <NumberTooltip
+  1848→                      {...props}
+  1849→                      num={num}
+  1850→                      suffix="%"
+  1851→                      labelFormatter={(l) => (l ? formatYearLabel(Number(l), locale) : '')}
+  1852→                    />
+  1853→                  )}
+  1854→                />
+  1855→                <Bar dataKey="progress" name={t('common.progress')} radius={[4, 4, 0, 0]}>
+  1856→                  {byYear.map((_, i) => (
+  1857→                    <Cell key={i} fill={INCOME_COLOR} />
+  1858→                  ))}
+  1859→                </Bar>
+  1860→              </BarChart>
+  1861→            </ResponsiveContainer>
+  1862→          )}
+  1863→        </ChartCard>
+  1864→
+  1865→        <ChartCard title={t('analytics.byCategory')}>
+  1866→          {categoryComparison.length === 0 ? (
+  1867→            <ChartEmpty noData={noData} />
+  1868→          ) : (
+  1869→            <ResponsiveContainer width="100%" height={300}>
+  1870→              <BarChart data={categoryComparison} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+  1871→                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+  1872→                <XAxis
+  1873→                  type="number"
+  1874→                  domain={[0, 100]}
+  1875→                  tickFormatter={(v) => `${v}%`}
+  1876→                  tick={{ fontSize: 11 }}
+  1877→                  stroke="var(--muted-foreground)"
+  1878→                />
+  1879→                <YAxis
+  1880→                  type="category"
+  1881→                  dataKey="name"
+  1882→                  tick={{ fontSize: 11 }}
+  1883→                  stroke="var(--muted-foreground)"
+  1884→                  width={120}
+  1885→                />
+  1886→                <RechartsTooltip
+  1887→                  content={(props) => (
+  1888→                    <NumberTooltip
+  1889→                      {...props}
+  1890→                      num={num}
+  1891→                      suffix="%"
+  1892→                    />
+  1893→                  )}
+  1894→                />
+  1895→                <Bar dataKey="progress" name={t('common.progress')} radius={[0, 4, 4, 0]}>
+  1896→                  {categoryComparison.map((entry, i) => (
+  1897→                    <Cell key={i} fill={entry.color} />
+  1898→                  ))}
+  1899→                </Bar>
+  1900→              </BarChart>
+  1901→            </ResponsiveContainer>
+  1902→          )}
+  1903→        </ChartCard>
+  1904→      </div>
+  1905→    </div>
+  1906→  )
+  1907→}
+  1908→
+  1909→// ---------------------------------------------------------------------------
+  1910→// Section router
+  1911→// ---------------------------------------------------------------------------
+  1912→
+  1913→interface SectionProps {
+  1914→  section: AnalyticsSection
+  1915→  filter: PeriodFilter
+  1916→  from: string
+  1917→  to: string
+  1918→}
+  1919→
+  1920→function SectionLoader({ section, filter, from, to }: SectionProps) {
+  1921→  const api = useApi()
+  1922→  const { t } = useI18n()
+  1923→  const noData = t('dash.noData')
+  1924→
+  1925→  const enabled = filter !== 'custom_range' || (!!from && !!to)
+  1926→
+  1927→  const queryKey = useMemo(
+  1928→    () => ['analytics', filter, from, to, section] as const,
+  1929→    [filter, from, to, section]
+  1930→  )
+  1931→
+  1932→  const { data, isLoading } = useQuery<Record<string, unknown>>({
+  1933→    queryKey,
+  1934→    queryFn: () =>
+  1935→      api.get<Record<string, unknown>>('/api/analytics', {
+  1936→        query: {
+  1937→          filter,
+  1938→          ...(filter === 'custom_range' && from ? { from } : {}),
+  1939→          ...(filter === 'custom_range' && to ? { to } : {}),
+  1940→          section,
+  1941→        },
+  1942→      }),
+  1943→    enabled,
+  1944→  })
+  1945→
+  1946→  const sectionData = data?.[section]
+  1947→
+  1948→  if (!enabled) {
+  1949→    return (
+  1950→      <div className="flex h-[200px] items-center justify-center">
+  1951→        <EmptyState title={t('common.apply')} description={`${t('common.from')} / ${t('common.to')}`} />
+  1952→      </div>
+  1953→    )
+  1954→  }
+  1955→
+  1956→  if (isLoading) return <AnalyticsSkeleton />
+  1957→  if (!sectionData) {
+  1958→    return (
+  1959→      <div className="flex h-[200px] items-center justify-center">
+  1960→        <EmptyState title={noData} />
+  1961→      </div>
+  1962→    )
+  1963→  }
+  1964→
+  1965→  switch (section) {
+  1966→    case 'income':
+  1967→      return <IncomeSection data={sectionData as IncomeData} loading={false} />
+  1968→    case 'expenses':
+  1969→      return <ExpensesSection data={sectionData as ExpenseData} loading={false} />
+  1970→    case 'wallets':
+  1971→      return <WalletsSection data={sectionData as WalletsData} loading={false} />
+  1972→    case 'cash_withdrawals':
+  1973→      return <CashWithdrawalsSection data={sectionData as CashWithdrawalsData} loading={false} />
+  1974→    case 'transfers':
+  1975→      return <TransfersSection data={sectionData as TransfersData} loading={false} />
+  1976→    case 'net_cash_flow':
+  1977→      return <NetCashFlowSection data={sectionData as NetCashFlowData} loading={false} />
+  1978→    case 'allocations':
+  1979→      return <AllocationsSection data={sectionData as AllocationsData} loading={false} />
+  1980→    case 'bank_credits':
+  1981→      return <BankCreditsSection data={sectionData as BankCreditsData} loading={false} />
+  1982→    case 'personal_loans':
+  1983→      return <PersonalLoansSection data={sectionData as PersonalLoansData} loading={false} />
+  1984→    case 'goals':
+  1985→      return <GoalsSection data={sectionData as GoalsData} loading={false} />
+  1986→    default:
+  1987→      return (
+  1988→        <div className="flex h-[200px] items-center justify-center">
+  1989→          <EmptyState title={noData} />
+  1990→        </div>
+  1991→      )
+  1992→  }
+  1993→}
+  1994→
+  1995→// ---------------------------------------------------------------------------
+  1996→// Main view
+  1997→// ---------------------------------------------------------------------------
+  1998→
+  1999→export function AnalyticsView() {
+  2000→  const { t } = useI18n()
+
+[showing lines 1-2000 of 2043; use offset=2001 with limit to continue reading]

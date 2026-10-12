@@ -1,0 +1,294 @@
+     1→# Personal Finance Manager — Worklog
+     2→
+     3→This file is the shared worklog for all agents working on this project.
+     4→Each agent MUST append a new section (separated by `---`) after finishing its task.
+     5→
+     6→---
+     7→Task ID: 1
+     8→Agent: orchestrator
+     9→Task: Foundation: Prisma schema, db push, core libs (auth, decimal money, i18n, store, audit, ledger, api helpers), layout/providers, theme.
+    10→
+    11→Work Log:
+    12→- Authored comprehensive Prisma schema (User, Session, AppSettings, Wallet, WalletLedgerEntry, WalletTransfer, CashWithdrawal, WalletAdjustment, Category, Article, IncomeTransaction, ExpenseTransaction, Allocation, BankCredit, CreditInstallment, CreditRepayment, PersonalLoan, PersonalLoanOperation, GoalCategory, Goal, AuditLog).
+    13→- Ran `bun run db:push` — DB now in sync with Prisma Client generated.
+    14→- Created `src/lib/money.ts` with exact decimal arithmetic (cents-based), locale-aware formatting (en/fr), Africa/Casablanca date handling.
+    15→- Created `src/lib/auth.ts` with PBKDF2 password hashing, signed session tokens, getSession/destroySession, session cookie helpers.
+    16→- Created `src/lib/i18n.ts` with full EN/FR dictionaries for every UI string (nav, dashboard, income, expense, categories, articles, wallets, transfers, withdrawals, adjustments, allocations, bank credits, personal loans, goals, analytics, settings, toasts).
+    17→- Created `src/lib/store.ts` (Zustand) for client-side view navigation (single-route constraint), locale, theme, sidebar state, branding.
+    18→- Created `src/lib/ledger.ts` with `getWalletBalance`, `getWalletBalanceAt`, `appendLedgerEntry`, `assertDebitAllowed`.
+    19→- Created `src/lib/audit.ts`, `src/lib/api.ts` (withAuth wrapper, serialize, ok/fail helpers).
+    20→- Created `src/lib/use-i18n.ts` (client hook) and `src/lib/use-api.ts` (fetch wrapper with toast).
+    21→- Rewrote `src/app/layout.tsx` with Providers wrapper.
+    22→- Created `src/components/providers.tsx` (ThemeProvider, QueryClientProvider, theme/locale sync).
+    23→- Rewrote `src/app/globals.css` with fintech palette: navy sidebar, green income, red expense, orange warning, blue/purple info, light & dark themes.
+    24→- Started dev server on port 3000 — boots cleanly.
+    25→
+    26→Stage Summary:
+    27→- All foundational pieces are in place. Database schema is authoritative and synced.
+    28→- Ready for parallel subagent work on: (3-6) backend API routes, (7-12) frontend views.
+    29→- Constraints honored: single `/` route (SPA navigation via Zustand), SQLite via Prisma (provider swap to postgresql for production), API routes instead of server actions, no test code, MAD default currency, EN/FR bilingual, Africa/Casablanca timezone.
+    30→
+    31→---
+    32→Task ID: 3
+    33→Agent: backend-wallets-api
+    34→Task: Backend API routes for auth (status/setup/login/logout/me/password), settings (+ branding-restore), wallets (list/create, by-id GET/PUT/DELETE, history), transfers, withdrawals, and adjustments.
+    35→
+    36→Work Log:
+    37→- Read existing lib signatures: `withAuth({ req, userId })`, `ok`/`fail`/`zodError`/`serialize`, `createSession`/`setSessionCookie`/`getSession`/`destroySession`/`clearSessionCookie`/`hashPassword`/`verifyPassword`/`hasAnyUser`, `toCents`/`fromCents`/`addMoney`/`subMoney`/`gteMoney`/`isPositiveMoney`/`parseLocalDate`, `getWalletBalance`/`appendLedgerEntry`/`assertDebitAllowed`, `audit({ userId, entityType, entityId, operation, previousValues, newValues, reason })`.
+    38→- Created `src/app/api/auth/status/route.ts` — public `GET` returning `{ setupComplete }` via `hasAnyUser()`.
+    39→- Created `src/app/api/auth/setup/route.ts` — first-run admin creation: validates `{name,email,password(min 10)}`, ensures AppSettings singleton exists, hashes password, creates user (`language:'en'`, `theme:'light'`), creates session, sets cookie, audits, returns `{ user, settings }` with status 201. Returns 409 if `hasAnyUser()` is true.
+    40→- Created `src/app/api/auth/login/route.ts` — 404 `'No account exists yet.'` when no user, otherwise validates email/password, looks up user (case-insensitive email), verifies password (401 `'Invalid email or password.'`), creates session, returns `{ user, settings }`.
+    41→- Created `src/app/api/auth/logout/route.ts` — `withAuth`-wrapped `POST` that destroys the current session and clears the cookie.
+    42→- Created `src/app/api/auth/me/route.ts` — `GET` returning `{ id, email, name, language, theme }` plus the AppSettings singleton (upserted to defaults if missing).
+    43→- Created `src/app/api/auth/password/route.ts` — `PUT` validates `{ currentPassword, newPassword(min 10) }`, verifies current password (400 `'Current password is incorrect.'`), hashes new password, saves, audits.
+    44→- Created `src/app/api/settings/route.ts` — `GET` upserts/returns the singleton; `PUT` validates Zod schema (`appName`, `appNameFr`, `defaultLanguage` enum, `defaultCurrency`, `defaultTimezone`, `referenceMonthlyIncome`, `allocationUnitValue` numeric-strings, `allowOverdraft` boolean), rejects empty trimmed appName, audits, returns updated settings.
+    45→- Created `src/app/api/settings/branding-restore/route.ts` — `PATCH` resets `appName`/`appNameFr` to defaults (`Personal Finance Manager` / `Gestionnaire de Finances Personnelles`), audits.
+    46→- Created `src/app/api/wallets/route.ts` — `GET` lists the user's wallets with computed `balance` via `getWalletBalance`, plus `combined`, `bankSubtotal`, `cashSubtotal`, `savingsSubtotal`, `otherSubtotal`. `POST` validates `{ name, type∈[bank,cash,savings,other], color?, description?, initialBalance, allowOverdraft?, active? }` and creates the wallet (201 with computed initial balance).
+    47→- Created `src/app/api/wallets/[id]/route.ts` — Next.js 16 dynamic route with `params: Promise<{ id: string }>`. `GET` returns wallet + balance + recent 10 ledger entries. `PUT` updates name/type/color/description/active/allowOverdraft only (never `initialBalance`). `DELETE` refuses (400 `'Cannot delete a wallet with existing transactions. Archive it instead.'`) if any ledger entries exist; otherwise deletes.
+    48→- Created `src/app/api/wallets/[id]/history/route.ts` — paginated `GET` with `from`/`to` (ISO dates, parsed via `parseLocalDate`), `search` (substring on comment), `page`/`pageSize` (default 20, max 100). Returns `{ items, total, page, pageSize }`.
+    49→- Created `src/app/api/transfers/route.ts` — `POST` validates `{ sourceWalletId, destWalletId, amount>0, financialDate, comment? }`, rejects `sourceWalletId === destWalletId` (400 `'Source and destination must be different.'`). Inside `$transaction`: loads both wallets (must belong to user + active), `assertDebitAllowed(tx, source, amount)`, creates `WalletTransfer` row, `appendLedgerEntry(tx, ...)` twice (debit source as `transfer_out` with negative amount, credit dest as `transfer_in` with positive amount). Audits, returns `{ transfer, sourceBalance, destBalance }` (201).
+    50→- Created `src/app/api/withdrawals/route.ts` — `POST` validates `{ sourceWalletId, destWalletId?, withdrawalType∈[external,internal], amount>0, financialDate, comment? }`. For `internal` requires `destWalletId`. Inside `$transaction`: assertDebitAllowed on source, create `CashWithdrawal`, then `appendLedgerEntry` debit on source (`withdrawal_external` or `withdrawal_internal`) and (if internal) credit on dest (`withdrawal_internal`). Returns `{ withdrawal, sourceBalance, destBalance? }` (201).
+    51→- Created `src/app/api/adjustments/route.ts` — `POST` validates `{ walletId, actualBalance?, adjustment?, financialDate, reason(min 3 chars) }`. Either `actualBalance` or `adjustment` must be present. Inside `$transaction`: compute `systemBalance = getWalletBalance`, derive signed adjustment from `actualBalance - systemBalance` if only `actualBalance` given. Create `WalletAdjustment` row (storing `adjustment`, `actualBalance`, `systemBalance`, `reason`). `appendLedgerEntry` with signed adjustment (positive credit / negative debit), operationType `'adjustment'`, referenceType `'adjustment'`. Returns `{ adjustment, newBalance }` (201).
+    52→- Fixed a runtime bug in `src/lib/api.ts`: the previous `withAuth` constructed `new NextRequest(req)` to read cookies, but in Next.js 16 this throws `Cannot read private member #state from an object whose class did not declare it`. Replaced with `await getSession()` (no args) which uses `next/headers` `cookies()` — the canonical Next.js 16 way to read cookies inside route handlers.
+    53→- Same fix applied to `src/app/api/auth/logout/route.ts` (which had its own `new NextRequest(req)` call).
+    54→- All Decimal-bearing Prisma results pass through `serialize()` before being returned via `ok()` / `NextResponse.json`.
+    55→- All protected routes correctly return 401 when no session cookie is present.
+    56→- End-to-end smoke test (curl) verified: setup → me → settings GET/PUT → wallet create (bank 5000, cash 500) → transfer 1000 bank→cash (bank 4000, cash 1500, combined unchanged 5500) → external withdrawal 200 from cash (cash 1300) → adjustment with actualBalance=4050 (bank +50 → 4050) → wallet history pagination returns both ledger entries → DELETE wallet with entries correctly 400s → branding-restore resets names → password change succeeds → logout clears cookie. After testing, reset the dev DB (`prisma db push --force-reset`) so downstream agents start with a clean DB.
+    57→- `bun run lint` passes cleanly with zero errors.
+    58→
+    59→Stage Summary:
+    60→- 14 route files delivered under `src/app/api/{auth,wallets,transfers,withdrawals,adjustments,settings}/`, plus a fix to `src/lib/api.ts` (`withAuth`) so cookies work in Next.js 16 route handlers.
+    61→- All financial mutations go through `db.$transaction` + `appendLedgerEntry(tx, ...)`, so the ledger remains the authoritative source of balances and transfers/withdrawals/adjustments are atomic.
+    62→- Zod validation is applied to every mutating endpoint; monetary fields are validated as numeric strings; financial dates are parsed via `parseLocalDate` to avoid timezone drift.
+    63→- All routes return JSON via `ok`/`fail`/`NextResponse.json` (never raw `Response.json`), and Decimal-bearing Prisma results pass through `serialize()` before returning.
+    64→- No tests written (per instructions). No Prisma schema changes (per instructions). No changes to `src/app/page.tsx`.
+    65→- Ready for downstream frontend agents to wire these endpoints into the SPA views (login/setup, settings, wallets, transfers, withdrawals, adjustments).
+    66→
+    67→---
+    68→Task ID: 4
+    69→Agent: backend-income-expense-api
+    70→Task: Backend API routes for categories, articles, income transactions, and expense transactions (CRUD + CSV export), with ledger reconciliation for income/expense edits and deletes.
+    71→
+    72→Work Log:
+    73→- Read existing lib signatures and Task 3 worklog: reused `withAuth({ req, userId })`, `ok`/`fail`/`zodError`/`serialize`, `getWalletBalance`/`appendLedgerEntry`/`assertDebitAllowed`, `audit`, `parseLocalDate`/`toCents`/`fromCents`/`subMoney`/`isPositiveMoney`.
+    74→- Created `src/app/api/categories/route.ts` — `GET` (filters: `type`, `archived` defaults false, `search`; returns `{ items }`) and `POST` (Zod-validated `{name 1..60, type∈[income,expense], color?, description?}`, enforces unique `(name,type)` per user → 409 on dup, audits).
+    75→- Created `src/app/api/categories/[id]/route.ts` — `GET`/`PUT` (name/type/color/description/archived; re-checks uniqueness) / `DELETE` (409 `'This category is referenced by historical transactions. Archive it instead?'` if referenced by IncomeTransaction/ExpenseTransaction/Article.defaultCategoryId).
+    76→- Created `src/app/api/articles/route.ts` — `GET` (filters: `type`, `active` default true, `search`; includes `defaultCategory`) and `POST` (`{name, type, description?, defaultAmount, defaultCategoryId?, active?}`; validates `defaultCategoryId` belongs to user and type matches; unique `(name,type)` per user).
+    77→- Created `src/app/api/articles/[id]/route.ts` — `GET`/`PUT`/`DELETE` (409 `'Cannot delete an article referenced by transactions. Deactivate it instead.'`).
+    78→- Created `src/app/api/income/route.ts` — `GET` with filters `from`/`to` (parseLocalDate, end-of-day inclusive), `walletId`/`categoryId`/`articleId`, `search` (name/comment), `page`/`pageSize` (max 100), `sort` (date_desc default; date_asc, amount_desc, amount_asc). Returns `{ items, total, page, pageSize }` with relations. `POST`: inside `$transaction` loads active wallet, resolves category from explicit field or `article.defaultCategoryId`, validates category type=income, creates IncomeTransaction, appends ledger credit (`operationType:'income'`, `direction:'credit'`, `referenceType:'income'`, `referenceId=income.id`), updates `ledgerEntryId`. Returns `{ income, walletBalance }` (201) with audit.
+    79→- Created `src/app/api/income/[id]/route.ts` — `GET` with relations; `PUT` reconciles ledger based on what changed: walletChanged → reverse full old amount on old wallet (debit) + apply new full amount as credit on new wallet; same wallet + amountChanged → append a single signed `operationType:'adjustment'` ledger entry of `newAmount-oldAmount` (direction credit/debit accordingly). `DELETE` appends a debit reversal (`operationType:'adjustment'`, `direction:'debit'`, referenceType='income', referenceId=id) and hard-deletes the row (ledger entries retained for auditability since `WalletLedgerEntry.referenceId` has no FK constraint). All paths audit + return `{ ok, walletBalance }` or `{ income, walletBalance }`.
+    80→- Created `src/app/api/income/export/route.ts` — `GET` CSV with same filters as list (no pagination). Headers: `Date, Name, Category, Article, Wallet, Amount, Comment`. Cells starting with `=`, `+`, `-`, `@` are prefixed with `'` to prevent formula injection; values containing commas/quotes/newlines are double-quoted with embedded quotes doubled. Returns `new NextResponse(csv, { headers: {'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="income.csv"'} })` directly (not NextResponse.json). Audits the export count.
+    81→- Created `src/app/api/expenses/route.ts` — mirrors income but walletId is the SOURCE wallet. `POST` calls `assertDebitAllowed(tx, walletId, amount)` before creating; appends a debit ledger entry (`operationType:'expense'`, `direction:'debit'`, amount negative).
+    82→- Created `src/app/api/expenses/[id]/route.ts` — `GET`/`PUT`/`DELETE`. PUT reconciliation: walletChanged → credit old wallet + (after re-checking funds via `assertDebitAllowed`) debit new wallet; same wallet + amountChanged → `diffCents = oldAmount-newAmount` (credit if positive, debit if negative), with `assertDebitAllowed` pre-check when expense increased. DELETE appends a credit reversal of the original amount.
+    83→- Created `src/app/api/expenses/export/route.ts` — same CSV export pattern, filename `expenses.csv`.
+    84→- Found and fixed a critical balance-staleness bug: initial implementation computed `walletBalance` *inside* the `db.$transaction(async (tx) => {...})` callback via `getWalletBalance(walletId)`, but `getWalletBalance` uses `db` (not `tx`). With Prisma SQLite, `db` reads use a different connection from the interactive transaction, so the returned `walletBalance` reflected the pre-write state. Refactored all 6 ledger-mutating routes (income POST/PUT/DELETE, expense POST/PUT/DELETE) so the transaction only performs writes and returns the relevant `walletId`, then `getWalletBalance(walletId)` is invoked AFTER the `await db.$transaction(...)` resolves so the read sees committed state.
+    85→- End-to-end curl smoke test (fresh DB, bank wallet 5000 + cash wallet 1000): income 2500 → wallet 7500; expense 300 → wallet 7200; income 2500→3000 update → wallet 7700; expense 300→800 update → wallet 7200; income moved BANK→CASH (3000) → BANK 4200, CASH 4000; delete income → CASH 1000; delete expense → BANK 5000. Final balances back to 5000/1000, ledger nets to zero. Also verified: overdraft rejection on expense > balance (400 `'Insufficient funds...'`); 409 on category delete with references; 409 on article delete with references; archived/active filtering on both categories and articles; `sort=amount_desc/asc` and `search` on income list; CSV exports return correct headers and formula-injection escaping (`=CMD` → `'=CMD`, `@formula injection test, with commas` → `'@formula injection test, with commas` properly quoted).
+    86→- `bun run lint` passes cleanly with zero errors.
+    87→- After testing, reset the dev DB (`prisma db push --force-reset`) so downstream agents start with a clean DB.
+    88→
+    89→Stage Summary:
+    90→- 10 route files delivered under `src/app/api/{categories,articles,income,expenses}/` (list/create, by-id GET/PUT/DELETE, and CSV export for income & expenses).
+    91→- All financial mutations go through `db.$transaction` + `appendLedgerEntry(tx, ...)` so the ledger remains authoritative; edits reverse/adjust correctly and deletes reverse the original entry while keeping the ledger rows for auditability.
+    92→- Discovered and fixed a Prisma-SQLite read-staleness bug: `getWalletBalance` inside a `db.$transaction` callback returns pre-transaction state because it uses a different connection. All mutating endpoints now recompute the wallet balance AFTER the transaction commits.
+    93→- Zod validation on every mutating endpoint; monetary fields validated as numeric strings; dates parsed via `parseLocalDate`; CSV cells are escaped against formula injection.
+    94→- All Decimal-bearing Prisma results pass through `serialize()` before returning; dynamic routes use `params: Promise<{ id: string }>`.
+    95→- No tests written (per instructions). No Prisma schema changes (per instructions). No changes to `src/app/page.tsx`.
+    96→- Ready for downstream frontend agents to wire these endpoints into the categories/articles/income/expenses SPA views.
+    97→
+    98→---
+    99→Task ID: 5
+   100→Agent: backend-planning-api
+   101→Task: Backend API routes for Allocations, Bank Credits (+ installments + repayments), Personal Loans (+ operations), Goal Categories, Goals (CRUD + filters + summary), and Goals CSV export.
+   102→
+   103→Work Log:
+   104→- Read existing lib signatures (db, auth, money, api, audit, ledger) and Task 3/4 worklogs. Reused `withAuth({ req, userId })`, `ok`/`fail`/`zodError`/`serialize`, `audit(...)`, `parseLocalDate`/`toCents`/`fromCents`/`subMoney`/`isPositiveMoney`/`pct`.
+   105→- Created `src/lib/credit-summary.ts` — shared computation helpers used across multiple routes:
+   106→  - `computeAllocationProgress(allocation)`: if `bankCreditId` is set, derive progress from `totalRepaid/originalPrincipal * 100` (clamped 0–100); otherwise return the stored `progress` field.
+   107→  - `computeCreditSummary(credit)`: returns `{ totalRepaid, outstanding, paidInstallments, remainingInstallments, progressPct, nextDueDate, expectedEndDate }`. `expectedEndDate = new Date(start.getFullYear(), start.getMonth() + durationMonths, start.getDate())`. `nextDueDate` = earliest pending installment with `dueDate >= today` (today zeroed), or null.
+   108→  - `computeLoanSummary(loan)`: returns `{ totalLent, totalRepaid, outstanding, progressPct }`. `totalLent` = sum of disbursements + additional + signed corrections; `totalRepaid` = sum of repayments; `outstanding = max(0, totalLent - totalRepaid)`; `progressPct = pct(totalRepaid, totalLent)` clamped 0–100.
+   109→- Created `src/app/api/allocations/route.ts`:
+   110→  - `GET` (auth): filters `type`, `classification`, `status`, `search`. Includes `bankCredit` and `category` relations. Per allocation, replaces `progress` with the computed value. Returns `{ items, summary: { referenceIncome, unitValue, totalActive, totalPassive, totalAllocated, unallocated, utilization, available } }`. Reads `referenceMonthlyIncome`/`allocationUnitValue` from the AppSettings singleton (upserted if missing). `utilization = totalActive / referenceIncome * 100`; `unallocated = max(0, referenceIncome - totalActive)`; `available = unallocated`.
+   111→  - `POST` (auth): Zod-validated `{ name, allocType, classification, amount, color?, bankCreditId?, categoryId?, progress?, status?, comment? }`. Validates `bankCreditId`/`categoryId` ownership. If bank-credit-linked, sets stored `progress` to 0 then recomputes from repayments. Audits. Returns created (201) with computed progress.
+   112→- Created `src/app/api/allocations/[id]/route.ts`:
+   113→  - `GET` (auth): returns one allocation with computed progress.
+   114→  - `PUT` (auth): updates editable fields. If `bankCreditId` is being set, ignores the stored `progress` (recomputes). Audits. Returns updated with computed progress.
+   115→  - `DELETE` (auth): planning record, no FK cascade issues — hard-delete + audit.
+   116→- Created `src/app/api/bank-credits/route.ts`:
+   117→  - `GET` (auth): lists credits; for each, attaches the computed summary (`totalRepaid`, `outstanding`, `paidInstallments`, `remainingInstallments`, `progressPct`, `nextDueDate`, `expectedEndDate`). Returns `{ items }`.
+   118→  - `POST` (auth): Zod-validated body (`creditName`, `lender`, `originalPrincipal>0`, `durationMonths 1..600`, `startDate`, `monthlyInstallment>0`, `interestRate?`, `fees?`, `paymentDay 1..31`, `description?`, `status?`). Inside `db.$transaction`: creates the `BankCredit`, then auto-generates the installment schedule — for `i in 0..durationMonths-1`, creates a `CreditInstallment` with `installmentNumber=i+1`, `dueDate=new Date(start.getFullYear(), start.getMonth() + i, start.getDate())`, `amount=monthlyInstallment`, `status='pending'`. Returns the created credit WITH installments and computed summary. Audits.
+   119→- Created `src/app/api/bank-credits/[id]/route.ts`:
+   120→  - `GET` (auth): one credit with `installments`, `repayments`, `allocations`, and computed summary.
+   121→  - `PUT` (auth): updates editable fields. If `durationMonths`/`startDate`/`monthlyInstallment` changed, REGENERATES the installment schedule inside `db.$transaction`: deletes all still-pending installments, then recreates the full schedule from start; SKIPS recreate for installment numbers already 'paid' to avoid duplicates. Audits with note `(schedule regenerated)` when triggered.
+   122→  - `DELETE` (auth): refuses with 409 `'Cannot delete a credit with repayments. Mark it as completed instead.'` if any repayment exists. Otherwise cascades installments + credit. Audits.
+   123→- Created `src/app/api/bank-credits/[id]/repayments/route.ts`:
+   124→  - `GET` (auth): list repayments ordered by `paymentDate desc`.
+   125→  - `POST` (auth): Zod-validated `{ amount>0, paymentDate, comment?, walletId?, linkedExpenseId? }`. Inside `db.$transaction`: creates `CreditRepayment`; then iterates earliest pending installments (ordered by `installmentNumber asc`) and marks them 'paid' while the cumulative amount ≤ repayment amount — stops on partial-coverage to avoid marking a partially-paid installment as paid. Returns `{ repayment, credit: <updated with summary> }` (201). Audits.
+   126→- Created `src/app/api/personal-loans/route.ts`:
+   127→  - `GET` (auth): lists loans with operations and computed summary. Returns `{ items }`.
+   128→  - `POST` (auth): Zod-validated `{ borrowerName, description?, originalAmount>0, loanDate, expectedRepayDate?, comment?, status? }`. Inside `db.$transaction`: creates `PersonalLoan`, then auto-creates an initial disbursement operation (`operationType='disbursement'`, `amount=originalAmount`, `operationDate=loanDate`, `comment='Initial disbursement'`). Returns created loan with operations + computed summary (201). Audits.
+   129→- Created `src/app/api/personal-loans/[id]/route.ts`:
+   130→  - `GET` (auth): one loan with operations and summary.
+   131→  - `PUT` (auth): updates `borrowerName`, `description`, `expectedRepayDate`, `comment`, `status` (NOT `originalAmount`/`loanDate` — those live on the initial disbursement operation). Audits.
+   132→  - `DELETE` (auth): refuses with 409 `'Cannot delete a loan with operations beyond the initial disbursement. Mark it as settled instead.'` if more than one operation exists. Otherwise cascade-deletes operations + loan. Audits.
+   133→- Created `src/app/api/personal-loans/[id]/operations/route.ts`:
+   134→  - `GET` (auth): list operations ordered by `operationDate asc`.
+   135→  - `POST` (auth): Zod-validated `{ operationType ∈ [disbursement,repayment,additional,correction], amount, operationDate, comment?, walletId?, linkedExpenseId? }`. For `correction` requires a non-empty `comment` (400 `'A comment is required for correction operations.'`). For `repayment`: recomputes loan summary and rejects with 400 `'Repayment exceeds the outstanding amount.'` if `toCents(amount) > toCents(outstanding)`. Creates the operation. Returns `{ operation, loan: <updated summary> }` (201). Audits.
+   136→- Created `src/app/api/goal-categories/route.ts`:
+   137→  - `GET` (auth): list categories with `_count.goals`. Supports `search`.
+   138→  - `POST` (auth): Zod-validated `{ name 1..60, color? }`. Enforces unique name per user (409). Audits.
+   139→- Created `src/app/api/goal-categories/[id]/route.ts`:
+   140→  - `GET` / `PUT` (re-checks name uniqueness on update) / `DELETE` (409 `'Cannot delete a category referenced by goals.'` if any goal references it). Audits.
+   141→- Created `src/app/api/goals/route.ts`:
+   142→  - `GET` (auth): filters `year`, `status`, `goalCategoryId`, `priority`, `search` (title/description/note), pagination `page`/`pageSize` (max 100). Per goal computes `remainingBudget = requiredBudget - savedBudget` via `subMoney`. Returns `{ items, total, page, pageSize, summary }` where summary includes `totalGoals`, `completedGoals`, `inProgressGoals`, `overallProgress` (average progress across all matching goals, not just the current page), `requiredTotal`, `savedTotal`, `remainingTotal`, and `byCategory` (aggregated counts/totals per category — uncategorized goals bucketed under id `'uncategorized'`).
+   143→  - `POST` (auth): Zod-validated body. If `status === 'completed'`, forces `progress = 100`. Validates `goalCategoryId` ownership. Audits. Returns created with `remainingBudget` (201).
+   144→- Created `src/app/api/goals/[id]/route.ts`:
+   145→  - `GET` (auth): one goal with `goalCategory` and computed `remainingBudget`.
+   146→  - `PUT` (auth): updates fields. If `status` transitions to `'completed'`, sets `progress = 100`. Audits. Returns updated with `remainingBudget`.
+   147→  - `DELETE` (auth): hard-delete + audit.
+   148→- Created `src/app/api/goals/export/route.ts`:
+   149→  - `GET` (auth): respects `year` filter. Columns: `Year, Title, Category, Priority, Status, Progress, RequiredBudget, SavedBudget, RemainingBudget, TargetDate, Note`. Cells starting with `=`, `+`, `-`, `@` are prefixed with `'` to prevent formula injection; values containing commas/quotes/newlines are double-quoted with embedded quotes doubled. `TargetDate` formatted as `YYYY-MM-DD` (UTC). Returns `new NextResponse(csv, { headers: {'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="goals.csv"'} })` directly. Audits export count.
+   150→- End-to-end curl smoke test (fresh DB, test user setup):
+   151→  - Bank credit created (Car Loan, 120000 principal, 12 months, monthlyInstallment=10500) → 12 installments auto-generated with dueDates 2025-01-15..2025-12-15; expectedEndDate=2026-01-15; totalRepaid=0; outstanding=120000; progressPct=0.
+   152→  - Repayment 10500 → installment #1 marked 'paid'; totalRepaid=10500; outstanding=109500; progressPct=9 (8.75 rounded); paidInstallments=1; remaining=11.
+   153→  - Allocation linked to bank credit: progress=9 (derived from credit repayments/principal).
+   154→  - Manual allocation: progress=25 (stored value used).
+   155→  - Allocations summary: referenceIncome=25000, unitValue=500, totalActive=5000, totalPassive=120000, totalAllocated=125000, unallocated=20000, utilization=20%, available=20000.
+   156→  - Personal loan created (Alice, 5000): initial disbursement operation auto-created; totalLent=5000; totalRepaid=0; outstanding=5000; progressPct=0.
+   157→  - Loan repayment 1500 → totalRepaid=1500; outstanding=3500; progressPct=30.
+   158→  - Loan repayment > outstanding → 400 `'Repayment exceeds the outstanding amount.'`.
+   159→  - Loan correction without comment → 400 `'A comment is required for correction operations.'`.
+   160→  - Loan delete with operations → 409.
+   161→  - Goal category create + unique-name enforcement working.
+   162→  - Goal create (requiredBudget=10000, savedBudget=4000) → remainingBudget=6000.
+   163→  - Goal create with status='completed' → progress forced to 100 even though body sent progress=50.
+   164→  - Goal PUT transitioning status to 'completed' → progress forced to 100.
+   165→  - Goals list with year=2025 filter: 2 goals, summary correctly aggregates totals + byCategory (1 'Finance' + 1 'Uncategorized').
+   166→  - Goals CSV export: correct headers, formula-injection escape verified, targetDate formatted as YYYY-MM-DD.
+   167→  - Goal category delete with goals → 409 `'Cannot delete a category referenced by goals.'`.
+   168→  - Bank credit DELETE with repayments → 409 `'Cannot delete a credit with repayments. Mark it as completed instead.'`.
+   169→  - Bank credit PUT changing durationMonths 12→6 → schedule regenerated: total installments=6, paid installment #1 preserved, progressPct=9 unchanged.
+   170→- `bun run lint` passes cleanly with zero errors.
+   171→- After testing, reset the dev DB (`prisma db push --force-reset --skip-generate`) so downstream agents start with a clean DB.
+   172→
+   173→Stage Summary:
+   174→- 13 route files delivered under `src/app/api/{allocations,bank-credits,personal-loans,goal-categories,goals}/`, plus a shared helper module `src/lib/credit-summary.ts` (3 reusable computation helpers: `computeAllocationProgress`, `computeCreditSummary`, `computeLoanSummary`).
+   175→- All planning records use `db.$transaction` for the create-with-side-effect flows (bank credit + installment schedule, personal loan + initial disbursement, repayment + installment auto-pay, schedule regeneration on credit update).
+   176→- Bank credits auto-generate the installment schedule on create and regenerate it on relevant PUTs, preserving 'paid' installments. Repayments auto-mark earliest pending installments as 'paid' while the cumulative amount fits within the repayment amount.
+   177→- Personal loans auto-create the initial disbursement operation; further operations (additional disbursements, repayments, signed corrections) are validated against the current outstanding balance.
+   178→- Goals support filtered listing with a full summary (totals, completion counts, overall progress, per-category breakdown), CSV export with formula-injection guards, and auto-force progress=100 when transitioning status to 'completed'.
+   179→- Zod validation on every mutating endpoint; monetary fields validated as numeric strings; dates parsed via `parseLocalDate`; CSV cells escaped against formula injection.
+   180→- All Decimal-bearing Prisma results pass through `serialize()` before returning; dynamic routes use `params: Promise<{ id: string }>`.
+   181→- No tests written (per instructions). No Prisma schema changes (per instructions). No changes to `src/app/page.tsx`.
+   182→- Ready for downstream frontend agents to wire these endpoints into the allocations/bank-credits/personal-loans/goals SPA views.
+   183→
+   184→---
+   185→Task ID: 6
+   186→Agent: backend-analytics-api
+   187→Task: Backend API routes for Dashboard, multi-section Analytics, and two CSV exports (wallets list, wallet history). Plus shared date-filter helper.
+   188→
+   189→Work Log:
+   190→- Read existing lib signatures (db, auth, money, api, ledger, audit, credit-summary) and Task 1/3/4/5 worklogs to understand operationType taxonomy: income, expense, transfer_in, transfer_out, withdrawal_external, withdrawal_internal, adjustment.
+   191→- Created `src/lib/date-filter.ts`:
+   192→  - `resolvePeriod(filter: 'today'|'this_week'|'this_month'|'this_year'|'all_time'|'custom', from?, to?): { start, end }` returning UTC Date objects with Africa/Casablanca local-date semantics (uses `Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca' })` to get local Y/M/D, then constructs midnight-UTC Date — matches the `parseLocalDate` convention used by tasks 3-5).
+   193→  - `WeekStart(date)` / `WeekEnd(date)` — Monday-based week helpers; Monday=0 (offset from JS getUTCDay where Sunday=0). WeekEnd is Sunday 23:59:59.999 UTC.
+   194→  - For 'this_month'/'this_year'/'custom', `end` is end-of-day (23:59:59.999 UTC) inclusive. For 'today', same end-of-day. For 'all_time', start=epoch, end=now.
+   195→  - Exports helper `ymKey(date)` ("YYYY-MM") and `ymdKey(date)` ("YYYY-MM-DD") used by monthly/daily chart bucketing.
+   196→- Created `src/app/api/dashboard/route.ts`:
+   197→  - `GET` (auth). Query: `filter` (default 'this_month'), `from`, `to` (for custom).
+   198→  - Returns the full dashboard object: `period`, `cards`, `charts`, `widgets`.
+   199→  - Cards: `totalWalletBalance` (all wallets), `income`/`expenses`/`netCashFlow`/`savingsRate` (IncomeTransaction & ExpenseTransaction in range — transfers/withdrawals excluded by design since they're not rows in those tables), `bankBalance`/`cashBalance`/`savingsBalance` (subtotal per type, matches /api/wallets behavior — includes all wallets since the money still exists even when archived), `outstandingBankDebt` (Σ max(0, principal − repaid) across bank credits), `outstandingLent` (Σ `computeLoanSummary.outstanding`), `savingsRate` (pct(netCashFlow, income)), `goalsProgress` (avg progress of current-year goals).
+   200→  - Charts: 12-month income-vs-expenses ending at period-end month; daily income/expense/net-cash-flow (cumulative) trend buckets capped at 400 days to avoid pathological 'all_time' expansion; expense-by-category & income-by-category aggregations (excludes archived categories); wallet distribution (active wallets only); goals completion (count per status, current year).
+   201→  - Widgets: recentTransactions (last 8 income+expense, sorted by financialDate desc then createdAt desc); topExpenseCategories (top 5); recentTransfers (last 5); upcomingInstallments (next 5 due installments with dueDate ≥ today, status=pending, ordered by dueDate asc); budgetUsage (empty array — no budget schema); alerts (low balance < 100 MAD, negative balance, overdue installments count, overdue personal loan repayments); goalsNearCompletion (current-year goals with 75 ≤ progress < 100); currentWalletBalances (active wallets only).
+   202→  - All monetary arithmetic uses `toCents`/`fromCents`/`addMoney`/`subMoney`/`pct`; Decimal-bearing Prisma objects pass through `serialize()` before `ok()`.
+   203→- Created `src/app/api/analytics/route.ts`:
+   204→  - `GET` (auth). Query: `filter`, `from`, `to`, optional `section` (comma-separated list — invalid sections are silently dropped; if no valid sections remain, returns all 10 sections).
+   205→  - 10 sections: `income`, `expenses`, `wallets`, `cash_withdrawals`, `transfers`, `net_cash_flow`, `allocations`, `bank_credits`, `personal_loans`, `goals`. Each computed by a dedicated `*Section` function so they can be selectively computed when a `section` query is given.
+   206→  - `income`/`expenses` sections: `total`, `byCategory` (excludes archived), `byArticle` (excludes inactive articles), `byWallet`, `monthly` (12 months ending at period-end), `average` (per month), `largest` (single transaction), `sourceConcentration` (income) / `savingsRate` + `budgetComparison` (expenses).
+   207→  - `wallets` section: `currentByWallet` (all wallets), `bankVsCash` (subtotals by type, includes all wallets — matches /api/wallets behavior), `historicalEvolution` (Σ `getWalletBalanceAt(walletId, asOfMonthEnd)` across all wallets, for 12 month-ends), `inflows`/`outflows` per wallet (income / expense + withdrawal_external buckets, EXCLUDING transfer_in/transfer_out/withdrawal_internal/adjustment to avoid double-counting internal movements), `transfers` (count + total, halved since each transfer creates 2 ledger entries), `withdrawals` (external vs internal, halved for internal), `adjustments` (count + absolute total).
+   208→  - `cash_withdrawals`: total, byWallet, count.
+   209→  - `transfers`: total, count, bySource, byDest.
+   210→  - `net_cash_flow`: income, expenses, net, monthly (12 months), savingsRate.
+   211→  - `allocations`: referenceIncome (from AppSettings), totalActive/totalPassive/totalAllocated, unallocated, utilization, available, byClassification (count + amount per classification).
+   212→  - `bank_credits`: originalDebt, totalRepaid, outstanding, progressPct, upcomingInstallments (next 10 dueDate ≥ today, status=pending), `byCredit` (full per-credit summary via `computeCreditSummary`).
+   213→  - `personal_loans`: totalLent, totalRepaid, outstanding, progressPct, progressByBorrower (sorted by outstanding desc).
+   214→  - `goals`: progressByYear, completionRate, totalGoals, completedGoals, budgetProgress ({required, saved, remaining}), categoryComparison (per-goal-category count + avgProgress, "Uncategorized" bucket for goals without a category).
+   215→- Created `src/app/api/wallets/export/route.ts`:
+   216→  - `GET` (auth). Returns CSV with header `Name,Type,InitialBalance,CurrentBalance,Active,Description` and one row per wallet. `CurrentBalance` computed via `getWalletBalance`. Cells starting with `=`, `+`, `-`, `@` are prefixed with `'`; values containing commas/quotes/newlines are double-quoted with embedded quotes doubled. Audits the export count. Returns `new NextResponse(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="wallets.csv"' } })` directly (not `NextResponse.json`).
+   217→- Created `src/app/api/wallets/[id]/history/export/route.ts`:
+   218→  - Next.js 16 dynamic route with `params: Promise<{ id: string }>`. `GET` (auth). 404 if the wallet doesn't belong to the user.
+   219→  - Supports the same `from`/`to`/`search` filters as the existing `/api/wallets/[id]/history` route (date range parsed via `parseLocalDate`, end-of-day inclusive on `to`).
+   220→  - Returns CSV with header `Date,OperationType,Direction,Amount,Comment` and one row per ledger entry (ordered by financialDate asc, createdAt asc). Formula-injection guards identical to other exports. `Date` formatted as `YYYY-MM-DD` UTC.
+   221→  - Filename is sanitized: `wallet-<safe-name>-history.csv` where the wallet name has non-alphanumeric chars replaced with `_` and is truncated to 40 chars. Audits the export count + wallet name.
+   222→- End-to-end curl smoke test (fresh DB, test user setup): created bank wallet (5000) + cash wallet (1000) + savings wallet (10000), Salary (income) + Groceries (expense) categories, income 25000 to bank, expense 500 from bank, transfer 800 bank→cash, external withdrawal 200 from cash, bank credit (Car Loan 120000/12 months/10500/installment) with auto-generated installments #1-12 due Jan 15 → Dec 15 2026, personal loan (Alice 5000), goal category + goal (year=2026, progress=80, required 50000/saved 40000), allocation (active 5000/month).
+   223→  - Dashboard `this_month`: totalWalletBalance=40300 (bank 28700 + cash 1600 + savings 10000), income=25000, expenses=500, netCashFlow=24500, savingsRate=98%, outstandingBankDebt=120000, outstandingLent=5000, goalsProgress=80. Monthly chart shows 12 buckets ending at 2026-10 with 25000/500 in October. walletDistribution correctly excludes archived cash wallet when toggled inactive; archived Salary category disappears from incomeByCategory chart then reappears when restored.
+   224→  - Dashboard `today`: period is current-day; incomeTrend has 1 bucket. `this_week`: Monday→Sunday range. `this_year`: Jan 1 → Dec 31. `all_time`: epoch → now. `custom` (Jan-Sep 2026): correctly returns 0 income (since the only income is in October).
+   225→  - Dashboard widgets: recentTransactions (2 = 1 income + 1 expense, ordered by date desc), recentTransfers (1 transfer bank→cash 800), upcomingInstallments (3 — Oct/Nov/Dec 15 2026, since Sep 15 is now < today), alerts (1 error: "9 overdue bank credit installment(s)" — installments #1-9 from Jan-Sep 2026 are pending but past their dueDate), goalsNearCompletion (1 goal at 80% progress), currentWalletBalances (3 active wallets).
+   226→  - Analytics `section=income`: total=25000, byCategory=[Salary 25000], byArticle=[] (no article linked), byWallet=[Bank Checking 25000], monthly bucket for 2026-10 = 25000, average=25000, largest=Salary October 25000, sourceConcentration=100%.
+   227→  - Analytics `section=expenses`: total=500, savingsRate=98%, budgetComparison={hasBudgets:false}, largest=Grocery shopping 500. All other expense aggregations correct.
+   228→  - Analytics `section=wallets`: currentByWallet (3 wallets), bankVsCash (bank 28700 / cash 1600 / savings 10000 / other 0), historicalEvolution (16000 for all past months — initial balances sum — then 40300 in October when income/expenses hit), inflows (bank +25000, others 0), outflows (bank -500 expense, others 0 — withdrawal_external correctly excluded since it's bucketed separately), transfers (count=2 ledger entries, total=800 halved), withdrawals.external (count=1, total=200), withdrawals.internal (0), adjustments (0).
+   229→  - Analytics `section=cash_withdrawals`: total=200, byWallet=[Cash Wallet 200], count=1.
+   230→  - Analytics `section=transfers`: total=800, count=1, bySource=[Bank Checking 800], byDest=[Cash Wallet 800].
+   231→  - Analytics `section=net_cash_flow`: income=25000, expenses=500, net=24500, savingsRate=98%, monthly chart correct.
+   232→  - Analytics `section=allocations`: referenceIncome=25000, totalActive=5000, totalPassive=0, totalAllocated=5000, unallocated=20000, utilization=20%, available=20000, byClassification=[other 1 / 5000].
+   233→  - Analytics `section=bank_credits`: originalDebt=120000, totalRepaid=0, outstanding=120000, progressPct=0, upcomingInstallments (3 — Oct/Nov/Dec), byCredit (Car Loan: nextDueDate 2026-10-15, expectedEndDate 2027-01-15, paidInstallments=0, remainingInstallments=12).
+   234→  - Analytics `section=personal_loans`: totalLent=5000, totalRepaid=0, outstanding=5000, progressPct=0, progressByBorrower=[Alice 5000/0/5000/0].
+   235→  - Analytics `section=goals`: progressByYear=[2026/1/0/80], completionRate=0, totalGoals=1, completedGoals=0, budgetProgress={required 50000, saved 40000, remaining 10000}, categoryComparison=[Uncategorized 1 / 80].
+   236→  - Analytics with no `section` param: top-level keys = period + all 10 sections.
+   237→  - Wallets CSV export: header + 3 wallet rows, balances match (Bank Checking 28700.00, Cash Wallet 1600.00, Savings 10000.00).
+   238→  - Wallet history CSV export: header + ledger entries in date asc order, with `Amount` column correctly prefixing negative values with `'` to guard against formula injection. Tested by creating an adjustment with `reason="=CMD|/恶意 formula injection test, with commas"` → CSV row shows the comment as `"'=CMD|/恶意 formula injection test, with commas"` (double-quoted AND prefixed with `'`).
+   239→  - Archived wallet test: archiving the Cash wallet removed it from `walletDistribution` and `currentWalletBalances` (per the "default charts exclude inactive wallets" rule), but `totalWalletBalance` and `bankVsCash`/`bankBalance`/`cashBalance` correctly still include its balance (since the wallet's money still exists).
+   240→- `bun run lint` passes cleanly with zero errors.
+   241→- After testing, reset the dev DB (`bun run db:push --force-reset --skip-generate`) so downstream agents start with a clean DB.
+   242→
+   243→Stage Summary:
+   244→- 5 files delivered: `src/lib/date-filter.ts` (shared period resolver + week helpers), `src/app/api/dashboard/route.ts` (consolidated dashboard with cards/charts/widgets), `src/app/api/analytics/route.ts` (10-section analytics with selective computation via `?section=...`), `src/app/api/wallets/export/route.ts` (wallets CSV export), `src/app/api/wallets/[id]/history/export/route.ts` (ledger CSV export).
+   245→- Critical aggregation rules honored: internal transfers (transfer_in/transfer_out) and internal withdrawals (withdrawal_internal) NEVER count as income/expense; external withdrawals (withdrawal_external) are bucketed separately from inflows/outflows; historical balances reconstructed via `getWalletBalanceAt`; archived categories excluded from by-category charts; inactive wallets excluded from default charts (walletDistribution, currentWalletBalances) but kept in raw totals (totalWalletBalance, bankVsCash) and CSV exports.
+   246→- All monetary arithmetic uses `toCents`/`fromCents`/`addMoney`/`subMoney`/`pct` (no floating point). Decimal-bearing Prisma results pass through `serialize()` before `ok()`. CSV exports return `new NextResponse(csv, { headers })` directly with formula-injection guards (`'=+\-@` prefix + double-quoting with embedded quote doubling).
+   247→- Dynamic routes use `params: Promise<{ id: string }>` per Next.js 16 conventions. All protected routes return 401 when no session cookie is present.
+   248→- No tests written (per instructions). No Prisma schema changes (per instructions). No changes to `src/app/page.tsx`.
+   249→- Ready for downstream frontend agents to wire these endpoints into the dashboard & analytics SPA views.
+   250→
+   251→---
+   252→Task ID: 8
+   253→Agent: frontend-dashboard-view
+   254→Task: Implement the Dashboard view (`src/components/views/dashboard-view.tsx`) — full single-route client view consuming the `/api/dashboard` endpoint (period filter, top/secondary stats, 6 recharts charts, 7 widget lists).
+   255→
+   256→Work Log:
+   257→- Replaced the 1-line stub with a full ~1200-line implementation. File lives at `src/components/views/dashboard-view.tsx` and is marked `'use client'`.
+   258→- Period filter bar: `Select` with six options (today / this_week / this_month / this_year / all_time / custom_range). When `custom_range` is selected, two `Input type="date"` fields (`from`, `to`) appear. Changing any of them updates the `useQuery` cache key `['dashboard', filter, from, to]` → triggers a refetch. The query is disabled until both `from` and `to` are set in custom mode (avoids 400s).
+   259→- Top stats grid (responsive 1/2/3/4 cols): `StatCard`s for `totalWalletBalance` (Wallet icon, default tone), `income` (TrendingUp, income tone), `expenses` (TrendingDown, expense tone), `netCashFlow` (Scale; tone derived from sign of `toCents(netCashFlow)` via `useMemo`).
+   260→- Secondary stats grid (responsive 1/2/3/4 cols): `bankBalance`, `cashBalance`, `savingsBalance` (conditionally rendered when `toCents(savingsBalance) !== 0`), `outstandingBankDebt` (expense tone), `outstandingLent` (info tone), `savingsRate` (with `%` suffix; tone derived from sign), `goalsProgress` (with `%` suffix).
+   261→- Charts section (lg:grid-cols-2), each chart wrapped in a `ChartCard` (`Card` + translated `CardTitle`):
+   262→  - **Monthly income vs expenses** — grouped `BarChart`, two bars per month (`Bar dataKey="income" fill="var(--income)"` / `"expenses" fill="var(--expense)"`), `ResponsiveContainer width="100%" height={300}`, hidden Y axis, custom tick formatter that parses the API `month` string (`YYYY-MM`) into a `Date` and formats it with `Intl.DateTimeFormat(locale === 'fr' ? 'fr-FR' : 'en-US', { month: 'short' })`. Legend is locale-aware.
+   263→  - **Expense distribution by category** — donut `PieChart` (`innerRadius={55} outerRadius={85}`) with each `Cell` filled by `slice.color` returned by the API. Center overlay shows the period total in money form. Side legend lists each category name + amount.
+   264→  - **Income distribution by category** — same `CategoryDonutChart` component, reused.
+   265→  - **Wallet balance distribution** — horizontal `BarChart` (`layout="vertical"`) with one bar per wallet colored by `wallet.color`; Y axis shows wallet names; X axis hidden; `maxBarSize={26}`.
+   266→  - **Net cash flow trend** — `AreaChart` with a `linearGradient` fill (`var(--info)` 35% → 2%), monotone line stroke `var(--info)`; X axis tick formatter renders the date as `Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })`.
+   267→  - **Goals completion** — donut `PieChart` colored by status via a `STATUS_COLOR` map (`not_started`→muted, `in_progress`→info, `completed`→income, `on_hold`→warning, `cancelled`→expense). Center shows total goal count. Side legend lists localized status labels with counts.
+   268→  - Each chart's `CardContent` falls back to `EmptyState` with `t('dash.noData')` when its data array is empty.
+   269→- Custom `MoneyTooltip` component is locale-aware: uses `money()` from `useI18n()` for all values, optional `labelFormatter` for the X-axis label, renders in a `bg-popover border shadow-md` panel with a colored dot per payload entry.
+   270→- Widgets section (lg:grid-cols-2, xl:grid-cols-3):
+   271→  - **Recent transactions** — `Card` + `ScrollArea` (`max-h-80 pr-3 scrollbar-thin`). Each row: name + colored `Badge` (background tinted by `categoryColor`, text in `categoryColor`), wallet name + date small, and amount via `MoneyText` (income green / expense red).
+   272→  - **Top expense categories** — top 5 with color dot, name, amount + percent; a hand-rolled mini progress bar (div with inline `width: %` and `backgroundColor: category.color`) shows each category's share of the period's total expense. Footer row with the total. (Used a plain div instead of shadcn `Progress` because the shadcn component hardcodes the indicator color to `bg-primary` and sets its own inline `transform`, so it can't be tinted per-row.)
+   273→  - **Recent transfers** — list of 5 with source → dest (with `ArrowRight` icon), amount, date.
+   274→  - **Upcoming installments** — list of 5 with credit name, `#installmentNumber` outline badge, due date (`CalendarClock` icon), amount, and status `Badge` (paid → income tone, overdue → expense tone, pending → warning tone).
+   275→  - **Financial alerts** — list with `border-l-{level}` colored left border (warning → `border-l-warning`, error → `border-l-expense`, info → `border-l-info`) and a matching icon (`AlertTriangle` for warning/error, `Info` for info). Empty array → friendly "All clear" panel with `BellOff` icon and a friendly description (better UX than `EmptyState` because "no alerts" is a *good* thing).
+   276→  - **Goals nearing completion** — list of goals with `progress >= 75 && < 100` (already filtered by backend), each with shadcn `Progress` (`h-1.5`) and the percent displayed on the right.
+   277→  - **Current wallet balances** — list of active wallets with color dot, name, localized type label (`wal.bank` / `wal.cash` / `wal.savings` / `wal.other`), and balance via `MoneyText`.
+   278→- Loading state: `DashboardSkeleton` renders skeleton placeholders for the four top cards, four secondary cards, four chart cards (260px tall skeleton inside), and six widget cards (each with 4 row skeletons). Triggered by `useQuery`'s `isLoading` flag OR missing `data`.
+   279→- Data fetching via `useQuery<DashboardResponse>({ queryKey: ['dashboard', filter, from, to], queryFn: () => api.get('/api/dashboard', { query: { filter, ...(from?), ...(to?) } }), enabled: filter !== 'custom_range' || (!!from && !!to) })`. Cache key changes on every filter change → automatic refetch.
+   280→- All TypeScript types declared at the top of the file (`DashboardPeriod`, `DashboardCards`, `CategorySlice`, `WalletSlice`, `MonthlyBucket`, `TrendPoint`, `GoalCompletionSlice`, `RecentTransaction`, `RecentTransfer`, `UpcomingInstallment`, `DashboardAlert`, `GoalNearCompletion`, `CurrentWalletBalance`, `DashboardResponse`) — no `any`.
+   281→- All recharts color tokens reference CSS variables (`var(--income)`, `var(--expense)`, `var(--info)`, `var(--accent)`) so the dashboard adapts to light/dark theme automatically.
+   282→- All translations go through `t('dash.*')` / `t('common.*')` / `t('wal.*')` / `t('goal.status.*')` — full EN/FR coverage already present in `src/lib/i18n.ts`. No new i18n keys were needed.
+   283→- `useMemo` is used to pre-compute chart data (cents → numbers for recharts, totals, percentages).
+   284→- `bun run lint` — 0 errors in dashboard-view.tsx. (1 unrelated warning in `src/components/boot.tsx` from a stale `eslint-disable` directive — not my file.)
+   285→- `tail -10 dev.log` shows `✓ Compiled` entries with no errors after my changes.
+   286→
+   287→Stage Summary:
+   288→- Delivered `src/components/views/dashboard-view.tsx` (~1200 lines) — feature-complete and matches every requirement in the spec: period filter bar (with custom range date inputs), top stats grid (4 cards), secondary stats grid (7 cards with conditional savings), 6 chart types using recharts (grouped bar, donut pie ×3, horizontal bar, area, donut pie), and 7 widget cards (recent transactions, top expense categories, recent transfers, upcoming installments, alerts, goals near completion, current wallet balances).
+   289→- All translations go through the existing i18n dictionary — full EN/FR bilingual coverage. Locale-aware month/date tick formatting via `Intl.DateTimeFormat`.
+   290→- Skeletons shown during `useQuery` loading. Empty states shown when chart/widget arrays are empty. Errors toast-notified by `useApi`; queries retry once per Providers defaultOptions.
+   291→- No Prisma schema changes. No test files. No other views modified. No new i18n keys. Only the dashboard-view.tsx file was touched.
+   292→- Ready for downstream agents: this view consumes `/api/dashboard` as-is. The other view stubs (`wallets-view`, `income-view`, etc.) still need to be implemented by their respective agents.
+
+[showing lines 1-292 of 293; use offset=293 with limit to continue reading]

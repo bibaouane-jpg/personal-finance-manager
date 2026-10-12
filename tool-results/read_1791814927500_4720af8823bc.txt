@@ -1,0 +1,1564 @@
+     1→# MASTER PROMPT — PERSONAL FINANCE MANAGEMENT WEB APPLICATION
+     2→## Production-Ready, Bilingual, Self-Hosted on Coolify
+     3→
+     4→You are a senior full-stack software engineer, software architect, financial systems engineer, database specialist, security engineer, UI/UX designer, and QA engineer.
+     5→
+     6→Your mission is to DESIGN, BUILD, TEST, AND PREPARE FOR DEPLOYMENT a complete personal finance management web application for one private user.
+     7→
+     8→This is a real application, not a UI mockup, static prototype, or dashboard demonstration.
+     9→
+    10→The application will be hosted on my own Ubuntu VPS using Coolify. It must use a persistent PostgreSQL database, secure authentication, reliable financial calculations, and a modern responsive interface.
+    11→
+    12→I have provided two Excel screenshots showing my current financial management system. Analyze them and use them as functional references for:
+    13→1. Income allocation, assets, liabilities, recurring expenses, and credit obligations.
+    14→2. Annual goals, priorities, budgets, progress, and completion status.
+    15→
+    16→Improve the original Excel system while preserving its useful logic.
+    17→
+    18→Do not ask me to rewrite requirements that are already specified here. Make reasonable implementation decisions, document them, and build the application.
+    19→
+    20→---
+    21→
+    22→# 1. CORE REQUIREMENTS
+    23→
+    24→Build an application that allows me to manage:
+    25→
+    26→- Personal income.
+    27→- Personal expenses.
+    28→- Bank accounts and cash wallets.
+    29→- Transfers between wallets.
+    30→- Cash withdrawals.
+    31→- Wallet balance adjustments.
+    32→- Transaction categories and reusable articles.
+    33→- Income allocation and assets/liabilities planning.
+    34→- Bank loans and credit repayment schedules.
+    35→- Money lent to family members and friends.
+    36→- Annual personal, family, career, and business goals.
+    37→- Financial analytics and historical reports.
+    38→- Application branding, language, currency, and preferences.
+    39→- Secure data exports and database backups.
+    40→
+    41→Every page must be connected to the real backend and database.
+    42→
+    43→Every button must perform its advertised action.
+    44→
+    45→All financial mutations must be validated on the server.
+    46→
+    47→All important financial operations must be covered by automated tests.
+    48→
+    49→Never substitute fake functionality for working features.
+    50→
+    51→# 2. TECHNOLOGY STACK
+    52→
+    53→Use the following stack:
+    54→
+    55→- Next.js with TypeScript.
+    56→- React.
+    57→- Tailwind CSS.
+    58→- shadcn/ui.
+    59→- Lucide icons.
+    60→- Recharts for charts.
+    61→- PostgreSQL.
+    62→- Prisma ORM.
+    63→- Zod validation.
+    64→- React Hook Form.
+    65→- next-intl or another appropriate Next.js internationalization library.
+    66→- Secure server-side authentication.
+    67→- Argon2id password hashing or an equivalent secure password-hashing solution.
+    68→- Vitest or Jest for unit and integration tests.
+    69→- Playwright for essential end-to-end tests.
+    70→- Docker for deployment.
+    71→
+    72→Use mutually compatible stable versions.
+    73→
+    74→Use server-side API routes or Server Actions with a clearly separated service layer for business logic.
+    75→
+    76→Keep database access, validation, financial calculations, and authorization on the server.
+    77→
+    78→Use exact decimal arithmetic for monetary calculations. PostgreSQL NUMERIC/DECIMAL and Prisma Decimal or an equivalent precise decimal implementation must be used.
+    79→
+    80→Do not use JavaScript floating-point numbers as the authoritative representation of money.
+    81→
+    82→Organize the code into reusable modules and components.
+    83→
+    84→# 3. BILINGUAL INTERFACE: ENGLISH AND FRENCH
+    85→
+    86→The application must support two complete languages:
+    87→
+    88→- English (EN).
+    89→- French (FR).
+    90→
+    91→Default language: English.
+    92→
+    93→Provide a language switcher in the application header or profile menu and in Settings.
+    94→
+    95→Translate the entire application, including:
+    96→
+    97→- Navigation.
+    98→- Dashboard cards.
+    99→- Charts and tooltips.
+   100→- Tables.
+   101→- Forms.
+   102→- Buttons.
+   103→- Filters.
+   104→- Validation messages.
+   105→- Notifications.
+   106→- Empty states.
+   107→- Authentication.
+   108→- Income and expense pages.
+   109→- Wallets.
+   110→- Articles and categories.
+   111→- Assets and liabilities.
+   112→- Bank credits.
+   113→- Personal loans.
+   114→- Goals.
+   115→- Analytics.
+   116→- Settings.
+   117→- Confirmation dialogs.
+   118→- Error messages.
+   119→
+   120→Use organized translation files. Do not hardcode user-facing text inside application components.
+   121→
+   122→Changing the language must immediately update the visible interface without requiring a reload wherever practical.
+   123→
+   124→Persist the preferred language in PostgreSQL so it remains selected after logout, login, and application restart.
+   125→
+   126→Keep financial values unchanged when changing languages.
+   127→
+   128→Use locale-appropriate date, number, and currency formatting.
+   129→
+   130→Use English locale formatting for English and French locale formatting for French.
+   131→
+   132→All future features must follow the same translation system.
+   133→
+   134→# 4. DEFAULT CURRENCY AND TIMEZONE
+   135→
+   136→Default currency: MAD — Moroccan Dirham.
+   137→
+   138→Default timezone: Africa/Casablanca.
+   139→
+   140→All initial examples, financial forms, charts, calculations, and reports must use MAD.
+   141→
+   142→Display currency appropriately in each language, for example:
+   143→
+   144→English: MAD 25,000.00.
+   145→
+   146→French: 25 000,00 MAD.
+   147→
+   148→Use Intl.NumberFormat or an equivalent reliable formatting mechanism.
+   149→
+   150→The currency formatting layer must be separate from the underlying financial calculations.
+   151→
+   152→Do not automatically convert existing transaction values if the display currency changes.
+   153→
+   154→If multi-currency accounting is not fully implemented, explicitly support MAD only and do not pretend to perform currency conversion.
+   155→
+   156→Store financial dates consistently and prevent timezone shifts from changing transaction dates.
+   157→
+   158→Use a documented weekly convention for date filters.
+   159→
+   160→# 5. CUSTOMIZABLE APPLICATION NAME AND BRANDING
+   161→
+   162→Create a dedicated Settings section called:
+   163→
+   164→- English: Application Settings.
+   165→- French: Paramètres de l'application.
+   166→
+   167→Provide an editable application name.
+   168→
+   169→Initial default name: Personal Finance Manager.
+   170→
+   171→The user must be able to change the name at any time.
+   172→
+   173→The saved name must automatically update:
+   174→
+   175→- Sidebar branding.
+   176→- Login page.
+   177→- Application header.
+   178→- Browser tab title.
+   179→- HTML document title.
+   180→- Relevant page metadata.
+   181→- Welcome messages.
+   182→- PWA manifest name and short name if a PWA is implemented.
+   183→
+   184→Use a centralized settings service. Never hardcode the application name throughout the codebase.
+   185→
+   186→The change must take effect without rebuilding or redeploying the application.
+   187→
+   188→The name must persist in PostgreSQL.
+   189→
+   190→Validate the name on the server:
+   191→- Trim leading and trailing whitespace.
+   192→- Reject empty names.
+   193→- Limit the name to 60 characters.
+   194→- Handle special characters safely.
+   195→
+   196→Provide Save and Restore Default actions.
+   197→
+   198→Changing the application name must not change internal routes, database identifiers, or technical package names.
+   199→
+   200→# 6. AUTHENTICATION AND SECURITY
+   201→
+   202→This application is exclusively for one private user.
+   203→
+   204→Implement:
+   205→
+   206→- Secure login.
+   207→- Initial administrator setup.
+   208→- Secure password hashing.
+   209→- Server-side session validation.
+   210→- HTTP-only secure cookies in production.
+   211→- Appropriate SameSite cookie settings.
+   212→- CSRF protection where applicable.
+   213→- Login rate limiting.
+   214→- Input validation.
+   215→- Server-side authorization on every protected operation.
+   216→- Secure logout.
+   217→- Password change.
+   218→- Secure production secrets.
+   219→
+   220→Disable public registration.
+   221→
+   222→Do not expose a default administrator password.
+   223→
+   224→Provide a secure first-run administrator setup procedure that cannot be exploited by arbitrary public users.
+   225→
+   226→Use a SESSION_SECRET or equivalent production secret with at least 32 characters.
+   227→
+   228→Protect every private page and API route.
+   229→
+   230→Do not commit passwords, secrets, or database credentials to source control.
+   231→
+   232→Do not store sensitive financial records only in browser local storage.
+   233→
+   234→# 7. APPLICATION DESIGN
+   235→
+   236→Create a polished, modern financial SaaS-style interface.
+   237→
+   238→Design principles:
+   239→
+   240→- Professional fintech appearance.
+   241→- Clean white or neutral content background.
+   242→- Deep navy or charcoal navigation.
+   243→- Green for income and positive progress.
+   244→- Red for expenses and outstanding obligations.
+   245→- Orange for warnings and intermediate progress.
+   246→- Blue or purple for neutral categories.
+   247→- Consistent typography and spacing.
+   248→- Subtle transitions.
+   249→- Responsive desktop, tablet, and mobile layouts.
+   250→- Accessible controls and keyboard navigation.
+   251→- Clear forms and confirmation dialogs.
+   252→
+   253→Implement:
+   254→
+   255→- Collapsible sidebar.
+   256→- Responsive mobile navigation.
+   257→- Header with current page title.
+   258→- Language switcher.
+   259→- Profile menu.
+   260→- Global search.
+   261→- Notifications.
+   262→- Light and dark themes.
+   263→- Toast notifications.
+   264→- Loading skeletons.
+   265→- Empty states.
+   266→- Error states.
+   267→- Pagination for large datasets.
+   268→
+   269→Use this navigation:
+   270→
+   271→1. Dashboard.
+   272→2. Income.
+   273→3. Expenses.
+   274→4. Wallets & Banks.
+   275→5. Articles.
+   276→6. Categories.
+   277→7. Assets & Liabilities.
+   278→8. Bank Credits.
+   279→9. Personal Loans.
+   280→10. Goals.
+   281→11. Analytics.
+   282→12. Settings.
+   283→
+   284→Use consistent English and French translations for every navigation item.
+   285→
+   286→# 8. DASHBOARD
+   287→
+   288→Build a comprehensive dashboard with date filters:
+   289→
+   290→- Today.
+   291→- This week.
+   292→- This month.
+   293→- This year.
+   294→- Custom date range.
+   295→- All time / Since the beginning.
+   296→
+   297→Clearly distinguish period-based statistics from current balances.
+   298→
+   299→## Main cards
+   300→
+   301→Display:
+   302→
+   303→- Total current wallet balance.
+   304→- Income for selected period.
+   305→- Expenses for selected period.
+   306→- Net cash flow for selected period.
+   307→- Total bank balance.
+   308→- Total cash balance.
+   309→- Outstanding bank debt.
+   310→- Outstanding money lent to others.
+   311→- Monthly savings rate where meaningful.
+   312→- Goals progress.
+   313→
+   314→Bank debt and loans receivable must not be included in the available wallet balance.
+   315→
+   316→## Charts
+   317→
+   318→### Monthly income versus expenses
+   319→
+   320→Create a grouped bar chart with exactly two primary bars per month:
+   321→
+   322→- Green: Income.
+   323→- Red: Expenses.
+   324→
+   325→Include:
+   326→- Month labels.
+   327→- Accurate monetary tooltips.
+   328→- Selected year or date range.
+   329→- Responsive layout.
+   330→- Legend.
+   331→- Empty-state handling.
+   332→
+   333→### Other charts
+   334→
+   335→Create:
+   336→
+   337→- Income trends.
+   338→- Expense trends.
+   339→- Expense distribution by category.
+   340→- Income distribution by category.
+   341→- Wallet balance distribution.
+   342→- Net cash flow.
+   343→- Goals completion.
+   344→- Monthly savings rate where sufficient data exists.
+   345→
+   346→Respect category colors across all charts.
+   347→
+   348→## Additional dashboard widgets
+   349→
+   350→Display:
+   351→
+   352→- Recent transactions.
+   353→- Highest expense categories.
+   354→- Recent transfers.
+   355→- Upcoming credit installments.
+   356→- Budget usage.
+   357→- Financial alerts.
+   358→- Goals nearing completion.
+   359→- Current wallet balances.
+   360→
+   361→All dashboard information must be calculated from actual database records.
+   362→
+   363→Do not display fabricated financial statistics.
+   364→
+   365→# 9. INCOME MANAGEMENT
+   366→
+   367→Create a fully functional Income page.
+   368→
+   369→Each income must include:
+   370→
+   371→- Unique ID.
+   372→- Name.
+   373→- Category.
+   374→- Article.
+   375→- Amount.
+   376→- Destination wallet.
+   377→- Financial date.
+   378→- Optional comment.
+   379→- Created timestamp.
+   380→- Updated timestamp.
+   381→
+   382→The article is selected from a predefined article list.
+   383→
+   384→When an article is selected, automatically populate the default amount and any applicable default category.
+   385→
+   386→The user can override the suggested amount for the individual transaction.
+   387→
+   388→Changing an article's default amount must not alter existing income records.
+   389→
+   390→## Operations
+   391→
+   392→Implement:
+   393→
+   394→- Create.
+   395→- View.
+   396→- Edit.
+   397→- Delete.
+   398→- Search.
+   399→- Sort.
+   400→- Pagination.
+   401→- Filter by period.
+   402→- Filter by category.
+   403→- Filter by article.
+   404→- Filter by wallet.
+   405→- CSV export.
+   406→
+   407→Creating an income credits the selected wallet.
+   408→
+   409→Editing the amount must apply only the difference between the old and new financial effects.
+   410→
+   411→Changing the wallet must reverse the previous wallet effect and apply the new one atomically.
+   412→
+   413→Deleting an income must reverse its financial effect.
+   414→
+   415→All changes must be transactional, validated, and traceable.
+   416→
+   417→# 10. EXPENSE MANAGEMENT
+   418→
+   419→Create a fully functional Expenses page.
+   420→
+   421→Each expense must include:
+   422→
+   423→- Unique ID.
+   424→- Name.
+   425→- Category.
+   426→- Article.
+   427→- Amount.
+   428→- Source wallet.
+   429→- Financial date.
+   430→- Optional comment.
+   431→- Created timestamp.
+   432→- Updated timestamp.
+   433→
+   434→Selecting an article loads its default amount.
+   435→
+   436→The amount can be changed for the individual expense.
+   437→
+   438→Creating an expense debits the selected wallet.
+   439→
+   440→Editing the amount must apply the correct difference.
+   441→
+   442→Changing the wallet must reverse the old effect and apply the new effect atomically.
+   443→
+   444→Deleting an expense must reverse its wallet effect.
+   445→
+   446→Support:
+   447→
+   448→- Create, edit, view, and delete.
+   449→- Search and sorting.
+   450→- Period filters.
+   451→- Category filters.
+   452→- Article filters.
+   453→- Wallet filters.
+   454→- CSV export.
+   455→- Expense summaries.
+   456→- Category distribution.
+   457→
+   458→Prevent impermissible negative balances unless overdrafts are explicitly enabled for the wallet.
+   459→
+   460→# 11. CATEGORY MANAGEMENT
+   461→
+   462→Support separate income and expense categories.
+   463→
+   464→Each category must have:
+   465→
+   466→- Unique ID.
+   467→- Name.
+   468→- Type: income or expense.
+   469→- Color.
+   470→- Optional description.
+   471→- Creation timestamp.
+   472→
+   473→Allow creating, editing, searching, and deleting categories.
+   474→
+   475→Category colors must appear in:
+   476→
+   477→- Transaction badges.
+   478→- Dashboard cards.
+   479→- Charts.
+   480→- Analytics.
+   481→- Filters.
+   482→
+   483→Prevent deletion of categories still referenced by historical transactions unless they are safely reassigned.
+   484→
+   485→Never silently destroy historical financial information.
+   486→
+   487→# 12. ARTICLES MANAGEMENT
+   488→
+   489→Create a separate Articles page.
+   490→
+   491→Examples of income articles:
+   492→
+   493→- Salary.
+   494→- Overtime.
+   495→- Freelance.
+   496→- Refund received.
+   497→- Online business income.
+   498→
+   499→Examples of expense articles:
+   500→
+   501→- Fuel.
+   502→- Groceries.
+   503→- Insurance.
+   504→- Internet and phone.
+   505→- Car installment.
+   506→- Family expenses.
+   507→
+   508→Each article must have:
+   509→
+   510→- Unique ID.
+   511→- Name.
+   512→- Type: income or expense.
+   513→- Description.
+   514→- Default amount.
+   515→- Optional default category.
+   516→- Active/inactive status.
+   517→- Created timestamp.
+   518→- Updated timestamp.
+   519→
+   520→Implement full CRUD, search, sorting, and filtering.
+   521→
+   522→Selecting an article in a transaction form must load its suggested default amount.
+   523→
+   524→Archived articles must remain available for historical reporting.
+   525→
+   526→Changing or deleting an article must never silently modify historical transaction amounts.
+   527→
+   528→# 13. WALLETS AND BANK ACCOUNTS
+   529→
+   530→Create a complete Wallets & Banks page.
+   531→
+   532→Examples:
+   533→
+   534→- CIH bank account.
+   535→- BMCI bank account.
+   536→- Cash.
+   537→- Savings account.
+   538→- Other accounts.
+   539→
+   540→Each wallet must include:
+   541→
+   542→- Unique ID.
+   543→- Name.
+   544→- Type: bank, cash, savings, or other.
+   545→- Color.
+   546→- Description.
+   547→- Initial balance.
+   548→- Creation date.
+   549→- Active/inactive status.
+   550→- Optional overdraft permission.
+   551→
+   552→## Initial balance
+   553→
+   554→The initial balance is recorded at wallet creation.
+   555→
+   556→Do not allow users to edit it as an ordinary field afterward.
+   557→
+   558→If correction is needed, provide a dedicated audited correction workflow.
+   559→
+   560→## Balance calculation
+   561→
+   562→The authoritative current balance is:
+   563→
+   564→Current balance = Initial balance + Sum of all valid signed wallet ledger operations.
+   565→
+   566→Use precise decimal arithmetic.
+   567→
+   568→Do not independently modify balances in multiple places.
+   569→
+   570→If cached balances are introduced, update them transactionally and provide reconciliation tests.
+   571→
+   572→## Wallet cards
+   573→
+   574→Display each wallet's:
+   575→
+   576→- Name.
+   577→- Color.
+   578→- Current balance.
+   579→- Account type.
+   580→- Recent activity.
+   581→
+   582→Display combined wallet balance, bank subtotal, and cash subtotal.
+   583→
+   584→## Wallet history
+   585→
+   586→Every wallet must show a complete operation history containing:
+   587→
+   588→- Income.
+   589→- Expense.
+   590→- Transfer in.
+   591→- Transfer out.
+   592→- Cash withdrawal.
+   593→- Manual adjustment.
+   594→- Other supported operations.
+   595→
+   596→Each operation must show date, type, description, amount, direction, related wallet or transaction, and comment.
+   597→
+   598→Support date filtering, search, sorting, and export.
+   599→
+   600→# 14. TRANSFERS
+   601→
+   602→Implement atomic transfers between wallets.
+   603→
+   604→Each transfer must include:
+   605→
+   606→- Unique transfer ID.
+   607→- Source wallet.
+   608→- Destination wallet.
+   609→- Amount.
+   610→- Date.
+   611→- Optional comment.
+   612→
+   613→A valid transfer creates two linked ledger entries:
+   614→
+   615→- Debit the source wallet.
+   616→- Credit the destination wallet.
+   617→
+   618→Reject transfers when:
+   619→
+   620→- The source and destination are the same.
+   621→- The amount is zero or negative.
+   622→- The amount exceeds the available source balance without an authorized overdraft.
+   623→- Any validation fails.
+   624→
+   625→Both ledger entries must be created or reversed in a single database transaction.
+   626→
+   627→Transfers must not count as consolidated income or expenses.
+   628→
+   629→The sum of all wallet balances must remain unchanged after an internal transfer.
+   630→
+   631→Prevent duplicate transfers when requests are retried.
+   632→
+   633→# 15. CASH WITHDRAWALS
+   634→
+   635→Support two distinct withdrawal types.
+   636→
+   637→### Type A: Withdrawal to external, untracked cash
+   638→
+   639→Debit the source bank wallet and record a withdrawal to an untracked destination.
+   640→
+   641→This is not automatically an expense.
+   642→
+   643→### Type B: Withdrawal to a tracked cash wallet
+   644→
+   645→Debit the source bank wallet and credit the destination cash wallet.
+   646→
+   647→The combined wallet balance remains unchanged.
+   648→
+   649→Both operations must be traceable in the wallet history.
+   650→
+   651→Never count a withdrawal as both a transfer and an expense.
+   652→
+   653→# 16. MANUAL WALLET ADJUSTMENTS
+   654→
+   655→Allow the user to reconcile a wallet against its real-world balance.
+   656→
+   657→The form must support:
+   658→
+   659→- Wallet.
+   660→- Actual balance or adjustment amount.
+   661→- Date.
+   662→- Mandatory reason/comment.
+   663→
+   664→If the user enters an actual balance, calculate the required adjustment from the current system balance.
+   665→
+   666→Example:
+   667→
+   668→System balance: 900 MAD.
+   669→
+   670→Actual balance: 950 MAD.
+   671→
+   672→Adjustment: +50 MAD.
+   673→
+   674→New balance: 950 MAD.
+   675→
+   676→Record a dedicated ledger entry.
+   677→
+   678→Never silently overwrite the wallet balance.
+   679→
+   680→Adjustment entries must appear in the wallet history and analytics.
+   681→
+   682→Use concurrency control to avoid race conditions.
+   683→
+   684→# 17. ASSETS AND LIABILITIES — EXCEL-INSPIRED ALLOCATION SYSTEM
+   685→
+   686→Recreate the useful allocation logic from my first Excel screenshot.
+   687→
+   688→This module is an allocation and financial planning system. Do not assume that the terms Assets and Liabilities are being used according to formal accounting standards.
+   689→
+   690→Allow customization of allocation types and labels.
+   691→
+   692→## Summary cards
+   693→
+   694→Display:
+   695→
+   696→- Reference monthly income.
+   697→- Total active allocations.
+   698→- Total passive allocations.
+   699→- Total allocated amount.
+   700→- Remaining unallocated amount.
+   701→- Allocation utilization percentage.
+   702→- Available capacity.
+   703→
+   704→## Dynamic allocation visualization
+   705→
+   706→My Excel uses a table divided into units, for example:
+   707→
+   708→Reference income: 25,000 MAD.
+   709→
+   710→Unit value: 500 MAD.
+   711→
+   712→Total units: 50.
+   713→
+   714→A vehicle allocation of 2,000 MAD occupies the equivalent of four units.
+   715→
+   716→The application must implement the same concept without hardcoding the 500 MAD unit.
+   717→
+   718→Allow configuring:
+   719→
+   720→- Reference amount.
+   721→- Unit value.
+   722→- Allocation categories.
+   723→- Colors.
+   724→
+   725→Calculate the visualization dynamically.
+   726→
+   727→Support fractional units or proportional bars when an amount is not an exact multiple of the unit value.
+   728→
+   729→Example:
+   730→
+   731→Reference amount: 25,000 MAD.
+   732→
+   733→Allocation: 2,000 MAD.
+   734→
+   735→Utilization: 8%.
+   736→
+   737→Remaining capacity: 23,000 MAD.
+   738→
+   739→## Allocation records
+   740→
+   741→Each allocation must include:
+   742→
+   743→- Unique ID.
+   744→- Name.
+   745→- Type: active or passive.
+   746→- Classification: credit, monthly expense, completed, or other.
+   747→- Amount.
+   748→- Color.
+   749→- Optional linked bank credit.
+   750→- Optional linked transaction.
+   751→- Status.
+   752→- Optional comment.
+   753→- Creation and update timestamps.
+   754→
+   755→Support CRUD, search, filtering, and sorting.
+   756→
+   757→## Credit-linked allocation
+   758→
+   759→When classification is Credit, allow selecting an existing bank credit.
+   760→
+   761→Display:
+   762→
+   763→- Original credit amount.
+   764→- Amount repaid.
+   765→- Outstanding amount.
+   766→- Repayment percentage.
+   767→- Monthly installment if configured.
+   768→
+   769→Derive repayment progress from validated credit repayment data.
+   770→
+   771→For other allocation types, allow manual progress when relevant.
+   772→
+   773→## Critical financial separation
+   774→
+   775→Allocations are planning records, not actual wallet transactions by default.
+   776→
+   777→Creating an allocation must not debit a wallet.
+   778→
+   779→Linking an allocation to an actual expense must not cause a second debit.
+   780→
+   781→Clearly distinguish planned amounts from actual expenses and available wallet balances.
+   782→
+   783→Persist all allocations in PostgreSQL.
+   784→
+   785→# 18. BANK CREDITS
+   786→
+   787→Create a separate Bank Credits page.
+   788→
+   789→Examples:
+   790→
+   791→- BMCI personal loan.
+   792→- Changan vehicle financing.
+   793→
+   794→Each credit must contain:
+   795→
+   796→- Unique ID.
+   797→- Credit name.
+   798→- Lender.
+   799→- Original principal.
+   800→- Duration in months.
+   801→- Start date.
+   802→- Monthly installment.
+   803→- Optional interest rate.
+   804→- Optional fees.
+   805→- Payment day.
+   806→- Description.
+   807→- Status.
+   808→
+   809→Calculate the expected end date from the start date and duration.
+   810→
+   811→Generate an installment schedule.
+   812→
+   813→If interest rates or contractual terms are unknown, do not pretend that a simplified schedule is contractually accurate. Support manual schedules.
+   814→
+   815→## Credit summary
+   816→
+   817→Display:
+   818→
+   819→- Original principal.
+   820→- Total repaid.
+   821→- Outstanding amount.
+   822→- Paid installments.
+   823→- Remaining installments.
+   824→- Progress percentage.
+   825→- Next due date.
+   826→- Expected end date.
+   827→
+   828→Allow recording, editing, and reversal of repayment records.
+   829→
+   830→Each repayment must have a date, amount, comment, and optional wallet association.
+   831→
+   832→Bank credit tracking must remain separate from wallet accounting.
+   833→
+   834→If a repayment is linked to a wallet expense, prevent it from being counted twice in consolidated analytics.
+   835→
+   836→## Installment visualization
+   837→
+   838→Show one segment per installment.
+   839→
+   840→- Green: paid.
+   841→- Red: remaining.
+   842→- Orange: overdue.
+   843→
+   844→Change credit card color according to repayment progress:
+   845→
+   846→- Below 50%: red.
+   847→- 50% to below 70%: orange.
+   848→- 70% to below 90%: dark green.
+   849→- 90% to 100%: green.
+   850→
+   851→Calculate progress from validated repayment data.
+   852→
+   853→Clearly distinguish estimated values from contractual values.
+   854→
+   855→# 19. PERSONAL LOANS GIVEN TO OTHER PEOPLE
+   856→
+   857→Create a separate Personal Loans page for money I lend to friends or family.
+   858→
+   859→Each loan must include:
+   860→
+   861→- Unique ID.
+   862→- Borrower's name.
+   863→- Description.
+   864→- Original amount lent.
+   865→- Loan date.
+   866→- Optional expected repayment date.
+   867→- Comment.
+   868→- Status.
+   869→
+   870→Each loan must contain a history of operations.
+   871→
+   872→Supported operations:
+   873→
+   874→- Initial loan disbursement.
+   875→- Partial repayment.
+   876→- Additional disbursement.
+   877→- Correction or reversal with a reason.
+   878→
+   879→Each operation must have:
+   880→
+   881→- Unique ID.
+   882→- Type.
+   883→- Amount.
+   884→- Date.
+   885→- Comment.
+   886→- Optional wallet association.
+   887→
+   888→Example:
+   889→
+   890→Initial loan: 1,000 MAD.
+   891→
+   892→Repayment received: 300 MAD.
+   893→
+   894→Outstanding principal: 700 MAD.
+   895→
+   896→Repayment progress: 30%.
+   897→
+   898→Calculate the outstanding principal using all valid disbursements and repayments.
+   899→
+   900→Prevent repayments exceeding the outstanding amount unless using an explicit correction workflow.
+   901→
+   902→## Wallet separation
+   903→
+   904→Personal loan operations must not automatically modify wallet balances.
+   905→
+   906→Allow explicit linking to wallet operations.
+   907→
+   908→If linked, apply both records transactionally and ensure the financial effect occurs only once.
+   909→
+   910→Display:
+   911→
+   912→- Total lent.
+   913→- Total repaid.
+   914→- Outstanding amount.
+   915→- Repayment percentage.
+   916→- Borrower.
+   917→- Operation history.
+   918→
+   919→Use repayment-progress card colors consistent with the bank credit module.
+   920→
+   921→# 20. YEARLY GOALS
+   922→
+   923→Create a complete Goals page inspired by my second Excel screenshot.
+   924→
+   925→Each goal must include:
+   926→
+   927→- Unique ID.
+   928→- Year.
+   929→- Category.
+   930→- Title.
+   931→- Description.
+   932→- Priority.
+   933→- Manual progress percentage.
+   934→- Status.
+   935→- Optional target date.
+   936→- Optional required budget.
+   937→- Optional saved budget.
+   938→- Calculated remaining budget.
+   939→- Optional note.
+   940→
+   941→## Goal categories
+   942→
+   943→Provide customizable categories such as:
+   944→
+   945→- Personal Development.
+   946→- Family.
+   947→- Personal Life.
+   948→- Career.
+   949→- Technical Training.
+   950→- Online Business.
+   951→- Travel.
+   952→- Housing.
+   953→- Savings.
+   954→- Other.
+   955→
+   956→## Goal filters
+   957→
+   958→Allow filtering by:
+   959→
+   960→- Year.
+   961→- Category.
+   962→- Status.
+   963→- Priority.
+   964→- Progress.
+   965→- Search.
+   966→
+   967→## Budget
+   968→
+   969→If a goal has a required budget:
+   970→
+   971→Remaining budget = Required budget - Saved budget.
+   972→
+   973→Budgets are optional.
+   974→
+   975→A negative remaining budget must be displayed correctly if savings exceed the target.
+   976→
+   977→Goal budgets must not modify wallet balances unless explicitly linked to actual transactions.
+   978→
+   979→## Goal statuses
+   980→
+   981→Support:
+   982→
+   983→- Not Started.
+   984→- In Progress.
+   985→- Completed.
+   986→- On Hold.
+   987→- Cancelled.
+   988→
+   989→Allow manual progress updates between 0% and 100%.
+   990→
+   991→A completed goal should normally have 100% progress.
+   992→
+   993→## Goal analytics
+   994→
+   995→Display:
+   996→
+   997→- Total goals per year.
+   998→- Completed goals.
+   999→- In-progress goals.
+  1000→- Overall progress.
+  1001→- Required budget.
+  1002→- Saved budget.
+  1003→- Remaining budget.
+  1004→- Category breakdown.
+  1005→- Year-over-year comparisons.
+  1006→
+  1007→Preserve goals across years.
+  1008→
+  1009→Support CSV export.
+  1010→
+  1011→# 21. ANALYTICS
+  1012→
+  1013→Create a dedicated Analytics page with separate sections for:
+  1014→
+  1015→- Income.
+  1016→- Expenses.
+  1017→- Wallets.
+  1018→- Cash withdrawals.
+  1019→- Transfers.
+  1020→- Net cash flow.
+  1021→- Assets and liabilities.
+  1022→- Bank credits.
+  1023→- Personal loans.
+  1024→- Goals.
+  1025→
+  1026→Provide filters for:
+  1027→
+  1028→- Today.
+  1029→- This week.
+  1030→- This month.
+  1031→- This year.
+  1032→- Custom range.
+  1033→- All time.
+  1034→
+  1035→Provide comparisons with previous equivalent periods where meaningful.
+  1036→
+  1037→## Income analytics
+  1038→
+  1039→Display:
+  1040→
+  1041→- Total income.
+  1042→- Income by category.
+  1043→- Income by article.
+  1044→- Income by wallet.
+  1045→- Monthly and yearly trends.
+  1046→- Average income.
+  1047→- Income source concentration.
+  1048→
+  1049→## Expense analytics
+  1050→
+  1051→Display:
+  1052→
+  1053→- Total expenses.
+  1054→- Expenses by category.
+  1055→- Expenses by article.
+  1056→- Expenses by wallet.
+  1057→- Largest expenses.
+  1058→- Monthly trends.
+  1059→- Average expense.
+  1060→- Savings rate.
+  1061→- Budget comparison.
+  1062→
+  1063→## Wallet analytics
+  1064→
+  1065→Display:
+  1066→
+  1067→- Current balance by wallet.
+  1068→- Bank versus cash balances.
+  1069→- Historical balance evolution.
+  1070→- Inflows and outflows.
+  1071→- Transfers.
+  1072→- Withdrawals.
+  1073→- Adjustments.
+  1074→- Reconciliation history.
+  1075→
+  1076→Historical balance charts must reconstruct balances from initial balances and dated ledger operations.
+  1077→
+  1078→Never use today's balance as every historical balance.
+  1079→
+  1080→## Cash-flow analytics
+  1081→
+  1082→Display:
+  1083→
+  1084→- Income.
+  1085→- Expenses.
+  1086→- Net cash flow.
+  1087→- Monthly comparisons.
+  1088→- Savings rate.
+  1089→
+  1090→Exclude internal transfers from consolidated income and expense totals.
+  1091→
+  1092→## Credit analytics
+  1093→
+  1094→Display:
+  1095→
+  1096→- Original debt.
+  1097→- Amount repaid.
+  1098→- Outstanding balance.
+  1099→- Repayment progress.
+  1100→- Upcoming installments.
+  1101→
+  1102→## Personal loan analytics
+  1103→
+  1104→Display:
+  1105→
+  1106→- Total money lent.
+  1107→- Total repayments.
+  1108→- Outstanding amount.
+  1109→- Repayment progress by borrower.
+  1110→
+  1111→## Goal analytics
+  1112→
+  1113→Display:
+  1114→
+  1115→- Progress by year.
+  1116→- Completion rate.
+  1117→- Budget progress.
+  1118→- Category comparison.
+  1119→
+  1120→Use real database data and correct aggregation logic for every chart.
+  1121→
+  1122→# 22. GLOBAL SEARCH, FILTERS, AND EXPORTS
+  1123→
+  1124→Implement:
+  1125→
+  1126→- Global search where appropriate.
+  1127→- Search by name, description, comment, and identifiers.
+  1128→- Filters by date, wallet, category, article, status, and amount.
+  1129→- Sorting.
+  1130→- Pagination.
+  1131→- Clear-all-filters controls.
+  1132→- CSV exports for all relevant modules.
+  1133→
+  1134→Exports must respect active filters.
+  1135→
+  1136→Protect CSV exports against formula injection.
+  1137→
+  1138→Use the selected language for headings and date formatting where practical.
+  1139→
+  1140→Financial amounts must remain numerically correct in exports.
+  1141→
+  1142→# 23. DATABASE AND FINANCIAL LEDGER
+  1143→
+  1144→Design a normalized PostgreSQL database with appropriate foreign keys, constraints, and indexes.
+  1145→
+  1146→Include at least:
+  1147→
+  1148→- User.
+  1149→- Session or equivalent authentication records.
+  1150→- Wallet.
+  1151→- Wallet ledger entry.
+  1152→- Wallet transfer.
+  1153→- Income transaction.
+  1154→- Expense transaction.
+  1155→- Category.
+  1156→- Article.
+  1157→- Asset/liability allocation.
+  1158→- Bank credit.
+  1159→- Credit installment.
+  1160→- Credit repayment.
+  1161→- Personal loan.
+  1162→- Personal loan operation.
+  1163→- Goal.
+  1164→- Goal category.
+  1165→- Application settings.
+  1166→- Audit log.
+  1167→
+  1168→Add additional tables where needed.
+  1169→
+  1170→## Ledger integrity
+  1171→
+  1172→Use the initial wallet balance and validated ledger entries as the authoritative source of wallet balances.
+  1173→
+  1174→Avoid multiple independent balance fields that can drift out of sync.
+  1175→
+  1176→If cached balances are used, update them in the same database transaction and provide reconciliation checks.
+  1177→
+  1178→Editing an income or expense must correct its ledger effect exactly once.
+  1179→
+  1180→Deleting or reversing an operation must never reverse it twice.
+  1181→
+  1182→Transfers must contain linked debit and credit entries.
+  1183→
+  1184→Concurrent operations must be protected by appropriate database transactions, locking, or equivalent concurrency controls.
+  1185→
+  1186→Use idempotency keys where appropriate to prevent duplicate financial mutations on retries.
+  1187→
+  1188→Use soft deletion or reversal entries where required for auditability.
+  1189→
+  1190→Never silently delete financial history.
+  1191→
+  1192→Keep allocation planning, bank credit tracking, and personal loan tracking separate from wallet ledger calculations unless explicitly linked.
+  1193→
+  1194→## Audit trail
+  1195→
+  1196→Record important changes:
+  1197→
+  1198→- Timestamp.
+  1199→- Entity type and ID.
+  1200→- Operation type.
+  1201→- Previous and new values where appropriate.
+  1202→- Reason for manual correction.
+  1203→- Related transaction reference.
+  1204→
+  1205→Never record passwords or authentication secrets.
+  1206→
+  1207→# 24. SETTINGS
+  1208→
+  1209→Create a complete Settings page divided into sections.
+  1210→
+  1211→## General settings
+  1212→
+  1213→- Application name.
+  1214→- Default language.
+  1215→- Currency.
+  1216→- Timezone.
+  1217→- Date and number formatting.
+  1218→
+  1219→## Appearance
+  1220→
+  1221→- Light theme.
+  1222→- Dark theme.
+  1223→- Sidebar preferences if supported.
+  1224→
+  1225→## Financial configuration
+  1226→
+  1227→- Reference monthly income.
+  1228→- Allocation unit value.
+  1229→- Default overdraft preferences.
+  1230→- Other financial defaults.
+  1231→
+  1232→## Security
+  1233→
+  1234→- Change password.
+  1235→- Session information where appropriate.
+  1236→
+  1237→## Data management
+  1238→
+  1239→- CSV exports.
+  1240→- Backup instructions.
+  1241→- Restore documentation.
+  1242→- Data portability.
+  1243→
+  1244→Persist settings in PostgreSQL.
+  1245→
+  1246→Use sensible defaults when the settings record does not exist.
+  1247→
+  1248→Changing application name, language, theme, or formatting must not affect financial calculations.
+  1249→
+  1250→# 25. BACKUPS AND DATA PORTABILITY
+  1251→
+  1252→Provide:
+  1253→
+  1254→- PostgreSQL backup instructions.
+  1255→- PostgreSQL restore instructions.
+  1256→- Database migration documentation.
+  1257→- CSV exports.
+  1258→- A complete backup strategy.
+  1259→- A procedure to verify backup integrity.
+  1260→- A documented restore test.
+  1261→
+  1262→Do not store financial records only in the application container.
+  1263→
+  1264→Never automatically delete data during redeployment.
+  1265→
+  1266→Never perform destructive migrations without a safe migration plan.
+  1267→
+  1268→Persistent database storage must survive application restarts and Coolify redeployments.
+  1269→
+  1270→# 26. COOLIFY AND VPS DEPLOYMENT
+  1271→
+  1272→The application must be deployable on my existing Ubuntu VPS through Coolify.
+  1273→
+  1274→Prepare:
+  1275→
+  1276→- Production Dockerfile.
+  1277→- Docker Compose file for local development where useful.
+  1278→- PostgreSQL deployment instructions.
+  1279→- Database migrations.
+  1280→- `.env.example`.
+  1281→- Environment variable documentation.
+  1282→- Health-check endpoint.
+  1283→- Production build instructions.
+  1284→- Persistent storage configuration.
+  1285→- Internal networking.
+  1286→- HTTPS configuration guidance.
+  1287→- Backup and restoration procedures.
+  1288→- Update and rollback instructions.
+  1289→- Complete README in English or French, preferably French.
+  1290→
+  1291→Required environment variables should include:
+  1292→
+  1293→- DATABASE_URL.
+  1294→- SESSION_SECRET.
+  1295→- APP_URL.
+  1296→- Initial administrator setup configuration if needed.
+  1297→
+  1298→Add other variables only when required.
+  1299→
+  1300→Never include real secrets in the repository.
+  1301→
+  1302→Never expose PostgreSQL publicly.
+  1303→
+  1304→Do not hardcode public ports that conflict with Coolify's reverse proxy.
+  1305→
+  1306→Use Coolify environment variables for production configuration.
+  1307→
+  1308→Allow deployment under a configurable domain, for example:
+  1309→
+  1310→finance.bibaouane.com
+  1311→
+  1312→Do not change or disrupt unrelated applications or services running on my VPS.
+  1313→
+  1314→Document precisely what I must configure in Coolify.
+  1315→
+  1316→Ensure that the production application works correctly behind HTTPS and a reverse proxy.
+  1317→
+  1318→# 27. AUTOMATED TESTS — MANDATORY FINANCIAL SCENARIOS
+  1319→
+  1320→Write automated tests for every critical financial rule.
+  1321→
+  1322→### Test A: Create income
+  1323→
+  1324→Initial balance: 1,000 MAD.
+  1325→
+  1326→Income: 500 MAD.
+  1327→
+  1328→Expected balance: 1,500 MAD.
+  1329→
+  1330→### Test B: Edit income
+  1331→
+  1332→Change income from 500 MAD to 700 MAD.
+  1333→
+  1334→Expected balance: 1,700 MAD, not 2,200 MAD.
+  1335→
+  1336→### Test C: Delete income
+  1337→
+  1338→Delete the 700 MAD income.
+  1339→
+  1340→Expected balance: 1,000 MAD.
+  1341→
+  1342→### Test D: Create expense
+  1343→
+  1344→Initial balance: 1,000 MAD.
+  1345→
+  1346→Expense: 200 MAD.
+  1347→
+  1348→Expected balance: 800 MAD.
+  1349→
+  1350→### Test E: Edit expense
+  1351→
+  1352→Change expense from 200 MAD to 300 MAD.
+  1353→
+  1354→Expected balance: 700 MAD.
+  1355→
+  1356→### Test F: Delete expense
+  1357→
+  1358→Delete the 300 MAD expense.
+  1359→
+  1360→Expected balance: 1,000 MAD.
+  1361→
+  1362→### Test G: Transfer
+  1363→
+  1364→Source: 2,000 MAD.
+  1365→
+  1366→Destination: 500 MAD.
+  1367→
+  1368→Transfer: 800 MAD.
+  1369→
+  1370→Expected source: 1,200 MAD.
+  1371→
+  1372→Expected destination: 1,300 MAD.
+  1373→
+  1374→Expected combined balance: 2,500 MAD.
+  1375→
+  1376→### Test H: Invalid transfer
+  1377→
+  1378→Source: 300 MAD.
+  1379→
+  1380→Attempted transfer: 500 MAD.
+  1381→
+  1382→Expected: rejected and both balances unchanged.
+  1383→
+  1384→### Test I: Tracked cash withdrawal
+  1385→
+  1386→Bank: 2,000 MAD.
+  1387→
+  1388→Cash: 100 MAD.
+  1389→
+  1390→Withdrawal: 500 MAD.
+  1391→
+  1392→Expected bank: 1,500 MAD.
+  1393→
+  1394→Expected cash: 600 MAD.
+  1395→
+  1396→Expected combined balance: 2,100 MAD.
+  1397→
+  1398→### Test J: Adjustment
+  1399→
+  1400→System balance: 900 MAD.
+  1401→
+  1402→Actual balance: 950 MAD.
+  1403→
+  1404→Adjustment: +50 MAD.
+  1405→
+  1406→Expected balance: 950 MAD.
+  1407→
+  1408→### Test K: Personal loan
+  1409→
+  1410→Amount lent: 1,000 MAD.
+  1411→
+  1412→Repayment: 300 MAD.
+  1413→
+  1414→Expected outstanding: 700 MAD.
+  1415→
+  1416→Expected progress: 30%.
+  1417→
+  1418→### Test L: Goal budget
+  1419→
+  1420→Required: 10,000 MAD.
+  1421→
+  1422→Saved: 4,000 MAD.
+  1423→
+  1424→Expected remaining budget: 6,000 MAD.
+  1425→
+  1426→### Test M: Concurrent withdrawals
+  1427→
+  1428→Attempt simultaneous withdrawals that together exceed the available balance.
+  1429→
+  1430→Expected: the application prevents an impermissible negative balance.
+  1431→
+  1432→### Test N: Duplicate requests
+  1433→
+  1434→Retry a financial mutation.
+  1435→
+  1436→Expected: no duplicate financial effect.
+  1437→
+  1438→### Test O: Historical balances
+  1439→
+  1440→Create transactions on different dates.
+  1441→
+  1442→Expected: historical reports reconstruct the correct balance at each date.
+  1443→
+  1444→### Test P: Credit repayment
+  1445→
+  1446→Record a repayment and a linked wallet expense.
+  1447→
+  1448→Expected: repayment progress updates correctly and the wallet expense is counted only once.
+  1449→
+  1450→### Test Q: Language switching
+  1451→
+  1452→Switch between English and French.
+  1453→
+  1454→Expected: all major pages and messages use the selected language, and the setting persists.
+  1455→
+  1456→### Test R: Currency formatting
+  1457→
+  1458→Display the same amount in English and French.
+  1459→
+  1460→Expected: locale-specific formatting changes without changing the actual value.
+  1461→
+  1462→### Test S: Application branding
+  1463→
+  1464→Change the application name.
+  1465→
+  1466→Expected: sidebar, login page, header, and browser title display the new name without redeployment.
+  1467→
+  1468→### Test T: Persistence
+  1469→
+  1470→Restart or redeploy the application.
+  1471→
+  1472→Expected: financial records, application name, language preference, and settings remain available.
+  1473→
+  1474→### Test U: Category deletion
+  1475→
+  1476→Attempt to delete a category referenced by historical transactions.
+  1477→
+  1478→Expected: the application prevents data corruption or uses a safe reassignment/archive workflow.
+  1479→
+  1480→Run the tests and fix all failures before declaring completion.
+  1481→
+  1482→# 28. IMPLEMENTATION WORKFLOW
+  1483→
+  1484→Build the real application in these stages.
+  1485→
+  1486→Stage 1: Inspect the available development environment and initialize the project.
+  1487→
+  1488→Stage 2: Implement database schema, migrations, settings, and financial ledger architecture.
+  1489→
+  1490→Stage 3: Implement authentication and server-side authorization.
+  1491→
+  1492→Stage 4: Implement wallets, ledger entries, transfers, withdrawals, and adjustments.
+  1493→
+  1494→Stage 5: Implement income, expenses, categories, and articles.
+  1495→
+  1496→Stage 6: Implement assets/liabilities allocations, bank credits, and personal loans.
+  1497→
+  1498→Stage 7: Implement yearly goals.
+  1499→
+  1500→Stage 8: Implement dashboard, analytics, global search, filters, and exports.
+  1501→
+  1502→Stage 9: Implement bilingual English/French support, MAD formatting, and dynamic application branding.
+  1503→
+  1504→Stage 10: Implement tests, Docker, and Coolify deployment documentation.
+  1505→
+  1506→Keep the project runnable after each major stage.
+  1507→
+  1508→Do not prioritize decorative UI over financial correctness.
+  1509→
+  1510→Do not stop after generating a plan, screenshots, a wireframe, or static mockup.
+  1511→
+  1512→If execution limits prevent finishing everything in one session, complete a working foundation first and clearly identify the remaining implementation work.
+  1513→
+  1514→# 29. FINAL ACCEPTANCE CRITERIA
+  1515→
+  1516→The application is accepted only when:
+  1517→
+  1518→- All required pages are functional.
+  1519→- All CRUD operations work with PostgreSQL.
+  1520→- The UI supports complete English and French translations.
+  1521→- English is the initial language.
+  1522→- MAD is the default currency.
+  1523→- Africa/Casablanca is the default timezone.
+  1524→- The application name is customizable in Settings.
+  1525→- The application name changes throughout the interface without redeployment.
+  1526→- Wallet balances remain correct after all supported operations.
+  1527→- Transfers do not count as income or expenses.
+  1528→- Bank credits and personal loans remain separate from wallets unless explicitly linked.
+  1529→- Financial operations cannot be double-counted.
+  1530→- Historical analytics reconstruct correct balances.
+  1531→- Category colors are consistent.
+  1532→- Goal data and allocation data persist.
+  1533→- Authentication protects private functionality.
+  1534→- Data survives restarts and redeployments.
+  1535→- Automated financial integrity tests pass.
+  1536→- Docker builds successfully.
+  1537→- Coolify deployment instructions are complete.
+  1538→- Backup and restore procedures are documented.
+  1539→- All unfinished features and limitations are explicitly disclosed.
+  1540→
+  1541→# 30. START EXECUTION NOW
+  1542→
+  1543→Start by inspecting your actual execution environment and available tools.
+  1544→
+  1545→Then create the project and implement the application.
+  1546→
+  1547→Analyze the two provided Excel screenshots as functional references.
+  1548→
+  1549→Generate real source code, real database schema and migrations, working forms, functional backend operations, charts based on real data, tests, and deployment files.
+  1550→
+  1551→Do not merely explain how I could build it.
+  1552→
+  1553→Do not stop after creating a visual prototype.
+  1554→
+  1555→Do not claim that tests passed unless you actually executed them.
+  1556→
+  1557→Do not claim deployment is successful unless it was actually performed and verified.
+  1558→
+  1559→At the end, provide:
+  1560→1. A summary of what was built.
+  1561→2. The project structure.
+  1562→3. Test results.
+  1563→4. Any remaining limitations.
+  1564→5. Exact step-by-step instructions to deploy the application using Coolify on my VPS.

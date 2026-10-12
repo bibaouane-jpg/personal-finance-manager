@@ -1,0 +1,1019 @@
+     1→import { db } from '@/lib/db'
+     2→import { withAuth, ok, serialize } from '@/lib/api'
+     3→import { resolvePeriod, ymKey } from '@/lib/date-filter'
+     4→import {
+     5→  toCents,
+     6→  fromCents,
+     7→  addMoney,
+     8→  subMoney,
+     9→  pct,
+    10→} from '@/lib/money'
+    11→import { getWalletBalance, getWalletBalanceAt } from '@/lib/ledger'
+    12→import {
+    13→  computeCreditSummary,
+    14→  computeLoanSummary,
+    15→} from '@/lib/credit-summary'
+    16→
+    17→type Section =
+    18→  | 'income'
+    19→  | 'expenses'
+    20→  | 'wallets'
+    21→  | 'cash_withdrawals'
+    22→  | 'transfers'
+    23→  | 'net_cash_flow'
+    24→  | 'allocations'
+    25→  | 'bank_credits'
+    26→  | 'personal_loans'
+    27→  | 'goals'
+    28→
+    29→const ALL_SECTIONS: Section[] = [
+    30→  'income',
+    31→  'expenses',
+    32→  'wallets',
+    33→  'cash_withdrawals',
+    34→  'transfers',
+    35→  'net_cash_flow',
+    36→  'allocations',
+    37→  'bank_credits',
+    38→  'personal_loans',
+    39→  'goals',
+    40→]
+    41→
+    42→interface AnalyticsContext {
+    43→  userId: string
+    44→  start: Date
+    45→  end: Date
+    46→}
+    47→
+    48→/** Compute income section analytics. */
+    49→async function incomeSection(ctx: AnalyticsContext) {
+    50→  const { userId, start, end } = ctx
+    51→  const dateRange = { gte: start, lte: end }
+    52→
+    53→  const [rows, allCats, allArticles, allWallets] = await Promise.all([
+    54→    db.incomeTransaction.findMany({
+    55→      where: { userId, financialDate: dateRange },
+    56→      include: { category: true, article: true, wallet: true },
+    57→    }),
+    58→    db.category.findMany({
+    59→      where: { userId, type: 'income' },
+    60→      select: { id: true, name: true, color: true, archived: true },
+    61→    }),
+    62→    db.article.findMany({
+    63→      where: { userId, type: 'income' },
+    64→      select: { id: true, name: true, active: true },
+    65→    }),
+    66→    db.wallet.findMany({
+    67→      where: { userId },
+    68→      select: { id: true, name: true, color: true, active: true, type: true },
+    69→    }),
+    70→  ])
+    71→
+    72→  const total = rows.reduce((acc, r) => addMoney(acc, r.amount), '0.00')
+    73→  const totalCents = toCents(total)
+    74→
+    75→  // byCategory
+    76→  const byCatMap = new Map<
+    77→    string,
+    78→    { categoryId: string; name: string; color: string; amount: number }
+    79→  >()
+    80→  for (const r of rows) {
+    81→    if (!r.categoryId) continue
+    82→    const cat = allCats.find((c) => c.id === r.categoryId)
+    83→    if (!cat || cat.archived) continue
+    84→    const e = byCatMap.get(cat.id) ?? {
+    85→      categoryId: cat.id,
+    86→      name: cat.name,
+    87→      color: cat.color,
+    88→      amount: 0,
+    89→    }
+    90→    e.amount += toCents(r.amount)
+    91→    byCatMap.set(cat.id, e)
+    92→  }
+    93→  const byCategory = Array.from(byCatMap.values())
+    94→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+    95→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+    96→
+    97→  // byArticle
+    98→  const byArtMap = new Map<
+    99→    string,
+   100→    { articleId: string; name: string; amount: number }
+   101→  >()
+   102→  for (const r of rows) {
+   103→    if (!r.articleId) continue
+   104→    const art = allArticles.find((a) => a.id === r.articleId)
+   105→    if (!art || !art.active) continue
+   106→    const e = byArtMap.get(art.id) ?? {
+   107→      articleId: art.id,
+   108→      name: art.name,
+   109→      amount: 0,
+   110→    }
+   111→    e.amount += toCents(r.amount)
+   112→    byArtMap.set(art.id, e)
+   113→  }
+   114→  const byArticle = Array.from(byArtMap.values())
+   115→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   116→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   117→
+   118→  // byWallet
+   119→  const byWalletMap = new Map<
+   120→    string,
+   121→    { walletId: string; name: string; color: string; amount: number }
+   122→  >()
+   123→  for (const r of rows) {
+   124→    const wlt = allWallets.find((w) => w.id === r.walletId)
+   125→    if (!wlt) continue
+   126→    const e = byWalletMap.get(wlt.id) ?? {
+   127→      walletId: wlt.id,
+   128→      name: wlt.name,
+   129→      color: wlt.color,
+   130→      amount: 0,
+   131→    }
+   132→    e.amount += toCents(r.amount)
+   133→    byWalletMap.set(wlt.id, e)
+   134→  }
+   135→  const byWallet = Array.from(byWalletMap.values())
+   136→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   137→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   138→
+   139→  // monthly (12 months ending at end-of-period)
+   140→  const endMonth = new Date(
+   141→    Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 0, 0, 0, 0)
+   142→  )
+   143→  const monthly: { month: string; amount: string }[] = []
+   144→  for (let i = 11; i >= 0; i--) {
+   145→    const bStart = new Date(
+   146→      Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() - i, 1, 0, 0, 0, 0)
+   147→    )
+   148→    const bEnd = new Date(
+   149→      Date.UTC(bStart.getUTCFullYear(), bStart.getUTCMonth() + 1, 0, 23, 59, 59, 999)
+   150→    )
+   151→    const cents = rows
+   152→      .filter((r) => {
+   153→        const d =
+   154→          r.financialDate instanceof Date ? r.financialDate : new Date(r.financialDate)
+   155→        return d >= bStart && d <= bEnd
+   156→      })
+   157→      .reduce((s, r) => s + toCents(r.amount), 0)
+   158→    monthly.push({ month: ymKey(bStart), amount: fromCents(cents) })
+   159→  }
+   160→
+   161→  // average per month over the period
+   162→  const periodMonths = Math.max(
+   163→    1,
+   164→    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+   165→      (end.getUTCMonth() - start.getUTCMonth()) +
+   166→      1
+   167→  )
+   168→  const average = fromCents(Math.round(totalCents / periodMonths))
+   169→
+   170→  // largest single income transaction
+   171→  const largestRow = rows.reduce(
+   172→    (best: null | (typeof rows)[number], r) =>
+   173→      best === null || toCents(r.amount) > toCents(best.amount) ? r : best,
+   174→    null
+   175→  )
+   176→  const largest = largestRow
+   177→    ? {
+   178→        id: largestRow.id,
+   179→        name: largestRow.name,
+   180→        amount: largestRow.amount,
+   181→        date: largestRow.financialDate,
+   182→        categoryName: largestRow.category?.name ?? null,
+   183→      }
+   184→    : null
+   185→
+   186→  // source concentration: share of the largest source bucket in total income.
+   187→  const topCatAmount = byCategory[0]?.amount ?? '0.00'
+   188→  const sourceConcentration = pct(topCatAmount, total)
+   189→
+   190→  return {
+   191→    total,
+   192→    byCategory,
+   193→    byArticle,
+   194→    byWallet,
+   195→    monthly,
+   196→    average,
+   197→    largest,
+   198→    sourceConcentration: Math.round(sourceConcentration * 100) / 100,
+   199→  }
+   200→}
+   201→
+   202→/** Compute expense section analytics. */
+   203→async function expenseSection(ctx: AnalyticsContext) {
+   204→  const { userId, start, end } = ctx
+   205→  const dateRange = { gte: start, lte: end }
+   206→
+   207→  const [rows, allCats, allArticles, allWallets, incomeRows] = await Promise.all([
+   208→    db.expenseTransaction.findMany({
+   209→      where: { userId, financialDate: dateRange },
+   210→      include: { category: true, article: true, wallet: true },
+   211→    }),
+   212→    db.category.findMany({
+   213→      where: { userId, type: 'expense' },
+   214→      select: { id: true, name: true, color: true, archived: true },
+   215→    }),
+   216→    db.article.findMany({
+   217→      where: { userId, type: 'expense' },
+   218→      select: { id: true, name: true, active: true },
+   219→    }),
+   220→    db.wallet.findMany({
+   221→      where: { userId },
+   222→      select: { id: true, name: true, color: true, active: true, type: true },
+   223→    }),
+   224→    db.incomeTransaction.findMany({
+   225→      where: { userId, financialDate: dateRange },
+   226→      select: { amount: true },
+   227→    }),
+   228→  ])
+   229→
+   230→  const total = rows.reduce((acc, r) => addMoney(acc, r.amount), '0.00')
+   231→  const totalCents = toCents(total)
+   232→
+   233→  const byCatMap = new Map<
+   234→    string,
+   235→    { categoryId: string; name: string; color: string; amount: number }
+   236→  >()
+   237→  for (const r of rows) {
+   238→    if (!r.categoryId) continue
+   239→    const cat = allCats.find((c) => c.id === r.categoryId)
+   240→    if (!cat || cat.archived) continue
+   241→    const e = byCatMap.get(cat.id) ?? {
+   242→      categoryId: cat.id,
+   243→      name: cat.name,
+   244→      color: cat.color,
+   245→      amount: 0,
+   246→    }
+   247→    e.amount += toCents(r.amount)
+   248→    byCatMap.set(cat.id, e)
+   249→  }
+   250→  const byCategory = Array.from(byCatMap.values())
+   251→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   252→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   253→
+   254→  const byArtMap = new Map<
+   255→    string,
+   256→    { articleId: string; name: string; amount: number }
+   257→  >()
+   258→  for (const r of rows) {
+   259→    if (!r.articleId) continue
+   260→    const art = allArticles.find((a) => a.id === r.articleId)
+   261→    if (!art || !art.active) continue
+   262→    const e = byArtMap.get(art.id) ?? {
+   263→      articleId: art.id,
+   264→      name: art.name,
+   265→      amount: 0,
+   266→    }
+   267→    e.amount += toCents(r.amount)
+   268→    byArtMap.set(art.id, e)
+   269→  }
+   270→  const byArticle = Array.from(byArtMap.values())
+   271→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   272→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   273→
+   274→  const byWalletMap = new Map<
+   275→    string,
+   276→    { walletId: string; name: string; color: string; amount: number }
+   277→  >()
+   278→  for (const r of rows) {
+   279→    const wlt = allWallets.find((w) => w.id === r.walletId)
+   280→    if (!wlt) continue
+   281→    const e = byWalletMap.get(wlt.id) ?? {
+   282→      walletId: wlt.id,
+   283→      name: wlt.name,
+   284→      color: wlt.color,
+   285→      amount: 0,
+   286→    }
+   287→    e.amount += toCents(r.amount)
+   288→    byWalletMap.set(wlt.id, e)
+   289→  }
+   290→  const byWallet = Array.from(byWalletMap.values())
+   291→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   292→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   293→
+   294→  const endMonth = new Date(
+   295→    Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 0, 0, 0, 0)
+   296→  )
+   297→  const monthly: { month: string; amount: string }[] = []
+   298→  for (let i = 11; i >= 0; i--) {
+   299→    const bStart = new Date(
+   300→      Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() - i, 1, 0, 0, 0, 0)
+   301→    )
+   302→    const bEnd = new Date(
+   303→      Date.UTC(bStart.getUTCFullYear(), bStart.getUTCMonth() + 1, 0, 23, 59, 59, 999)
+   304→    )
+   305→    const cents = rows
+   306→      .filter((r) => {
+   307→        const d =
+   308→          r.financialDate instanceof Date ? r.financialDate : new Date(r.financialDate)
+   309→        return d >= bStart && d <= bEnd
+   310→      })
+   311→      .reduce((s, r) => s + toCents(r.amount), 0)
+   312→    monthly.push({ month: ymKey(bStart), amount: fromCents(cents) })
+   313→  }
+   314→
+   315→  const periodMonths = Math.max(
+   316→    1,
+   317→    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+   318→      (end.getUTCMonth() - start.getUTCMonth()) +
+   319→      1
+   320→  )
+   321→  const average = fromCents(Math.round(totalCents / periodMonths))
+   322→
+   323→  const largestRow = rows.reduce(
+   324→    (best: null | (typeof rows)[number], r) =>
+   325→      best === null || toCents(r.amount) > toCents(best.amount) ? r : best,
+   326→    null
+   327→  )
+   328→  const largest = largestRow
+   329→    ? {
+   330→        id: largestRow.id,
+   331→        name: largestRow.name,
+   332→        amount: largestRow.amount,
+   333→        date: largestRow.financialDate,
+   334→        categoryName: largestRow.category?.name ?? null,
+   335→      }
+   336→    : null
+   337→
+   338→  const incomeTotal = incomeRows.reduce(
+   339→    (acc, r) => addMoney(acc, r.amount),
+   340→    '0.00'
+   341→  )
+   342→  const savingsRate = pct(subMoney(incomeTotal, total), incomeTotal)
+   343→
+   344→  // No wallet-level budgets in schema; expose a structural placeholder.
+   345→  const budgetComparison = { hasBudgets: false, message: 'No budgets configured.' }
+   346→
+   347→  return {
+   348→    total,
+   349→    byCategory,
+   350→    byArticle,
+   351→    byWallet,
+   352→    largest,
+   353→    monthly,
+   354→    average,
+   355→    savingsRate: Math.round(savingsRate * 100) / 100,
+   356→    budgetComparison,
+   357→  }
+   358→}
+   359→
+   360→/** Compute wallets section analytics. */
+   361→async function walletsSection(ctx: AnalyticsContext) {
+   362→  const { userId, start, end } = ctx
+   363→
+   364→  const wallets = await db.wallet.findMany({
+   365→    where: { userId },
+   366→    orderBy: [{ type: 'asc' }, { createdAt: 'asc' }],
+   367→  })
+   368→
+   369→  const enriched = await Promise.all(
+   370→    wallets.map(async (w) => ({
+   371→      wallet: w,
+   372→      balance: await getWalletBalance(w.id),
+   373→    }))
+   374→  )
+   375→
+   376→  const currentByWallet = enriched.map((e) => ({
+   377→    walletId: e.wallet.id,
+   378→    name: e.wallet.name,
+   379→    type: e.wallet.type,
+   380→    color: e.wallet.color,
+   381→    active: e.wallet.active,
+   382→    balance: e.balance,
+   383→  }))
+   384→
+   385→  // Bank vs cash summary (matches /api/wallets behavior — include all wallets,
+   386→  // active or not — the wallet's balance still exists even if archived).
+   387→  const bankVsCash = {
+   388→    bank: enriched
+   389→      .filter((e) => e.wallet.type === 'bank')
+   390→      .reduce((acc, e) => addMoney(acc, e.balance), '0.00'),
+   391→    cash: enriched
+   392→      .filter((e) => e.wallet.type === 'cash')
+   393→      .reduce((acc, e) => addMoney(acc, e.balance), '0.00'),
+   394→    savings: enriched
+   395→      .filter((e) => e.wallet.type === 'savings')
+   396→      .reduce((acc, e) => addMoney(acc, e.balance), '0.00'),
+   397→    other: enriched
+   398→      .filter((e) => e.wallet.type === 'other')
+   399→      .reduce((acc, e) => addMoney(acc, e.balance), '0.00'),
+   400→  }
+   401→
+   402→  // Historical evolution: total balance at each month-end for the last 12 months.
+   403→  const today = new Date()
+   404→  const evolution: { date: string; total: string }[] = []
+   405→  for (let i = 11; i >= 0; i--) {
+   406→    const monthEnd = new Date(
+   407→      Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - i + 1, 0, 23, 59, 59, 999)
+   408→    )
+   409→    if (monthEnd > today) {
+   410→      // Future month-end; use today's date instead.
+   411→      // (Only happens for the current month bucket — we want balance "as of now".)
+   412→    }
+   413→    const asOf = monthEnd > today ? today : monthEnd
+   414→    let total = 0
+   415→    for (const w of wallets) {
+   416→      const bal = await getWalletBalanceAt(w.id, asOf)
+   417→      total += toCents(bal)
+   418→    }
+   419→    evolution.push({
+   420→      date: monthEnd.toISOString().slice(0, 10),
+   421→      total: fromCents(total),
+   422→    })
+   423→  }
+   424→
+   425→  // Ledger inflows/outflows/transfers/withdrawals/adjustments in period.
+   426→  // IMPORTANT: exclude transfer_in/transfer_out and withdrawal_internal from
+   427→  // the "inflows"/"outflows" totals so internal movements don't double-count.
+   428→  const ledger = await db.walletLedgerEntry.findMany({
+   429→    where: {
+   430→      walletId: { in: wallets.map((w) => w.id) },
+   431→      financialDate: { gte: start, lte: end },
+   432→    },
+   433→    select: { amount: true, operationType: true, direction: true, walletId: true },
+   434→  })
+   435→
+   436→  const inflowsByWallet = new Map<string, number>()
+   437→  const outflowsByWallet = new Map<string, number>()
+   438→  const inflowOpTypes = new Set(['income'])
+   439→  const outflowOpTypes = new Set(['expense', 'withdrawal_external'])
+   440→
+   441→  let transfersCount = 0
+   442→  let withdrawalsExternalCount = 0
+   443→  let withdrawalsInternalCount = 0
+   444→  let adjustmentsCount = 0
+   445→  let transfersTotal = 0
+   446→  let withdrawalsExternalTotal = 0
+   447→  let withdrawalsInternalTotal = 0
+   448→  let adjustmentsTotal = 0
+   449→
+   450→  for (const e of ledger) {
+   451→    const cents = toCents(e.amount)
+   452→    if (e.operationType === 'transfer_in' || e.operationType === 'transfer_out') {
+   453→      transfersCount++
+   454→      transfersTotal += Math.abs(cents)
+   455→    } else if (e.operationType === 'withdrawal_internal') {
+   456→      withdrawalsInternalCount++
+   457→      withdrawalsInternalTotal += Math.abs(cents)
+   458→    } else if (e.operationType === 'withdrawal_external') {
+   459→      withdrawalsExternalCount++
+   460→      withdrawalsExternalTotal += Math.abs(cents)
+   461→    } else if (e.operationType === 'adjustment') {
+   462→      adjustmentsCount++
+   463→      adjustmentsTotal += Math.abs(cents)
+   464→    } else if (inflowOpTypes.has(e.operationType)) {
+   465→      inflowsByWallet.set(
+   466→        e.walletId,
+   467→        (inflowsByWallet.get(e.walletId) ?? 0) + Math.max(0, cents)
+   468→      )
+   469→    } else if (outflowOpTypes.has(e.operationType)) {
+   470→      outflowsByWallet.set(
+   471→        e.walletId,
+   472→        (outflowsByWallet.get(e.walletId) ?? 0) + Math.max(0, -cents)
+   473→      )
+   474→    }
+   475→  }
+   476→
+   477→  const inflows = wallets.map((w) => ({
+   478→    walletId: w.id,
+   479→    name: w.name,
+   480→    amount: fromCents(inflowsByWallet.get(w.id) ?? 0),
+   481→  }))
+   482→  const outflows = wallets.map((w) => ({
+   483→    walletId: w.id,
+   484→    name: w.name,
+   485→    amount: fromCents(outflowsByWallet.get(w.id) ?? 0),
+   486→  }))
+   487→
+   488→  return {
+   489→    currentByWallet,
+   490→    bankVsCash,
+   491→    historicalEvolution: evolution,
+   492→    inflows,
+   493→    outflows,
+   494→    transfers: {
+   495→      count: transfersCount,
+   496→      total: fromCents(Math.round(transfersTotal / 2)), // two ledger entries per transfer
+   497→    },
+   498→    withdrawals: {
+   499→      external: {
+   500→        count: withdrawalsExternalCount,
+   501→        total: fromCents(withdrawalsExternalTotal),
+   502→      },
+   503→      internal: {
+   504→        count: withdrawalsInternalCount,
+   505→        total: fromCents(Math.round(withdrawalsInternalTotal / 2)), // two entries per internal withdrawal
+   506→      },
+   507→    },
+   508→    adjustments: {
+   509→      count: adjustmentsCount,
+   510→      total: fromCents(adjustmentsTotal),
+   511→    },
+   512→  }
+   513→}
+   514→
+   515→/** Compute cash withdrawals section analytics. */
+   516→async function cashWithdrawalsSection(ctx: AnalyticsContext) {
+   517→  const { userId, start, end } = ctx
+   518→  const dateRange = { gte: start, lte: end }
+   519→
+   520→  const [withdrawals, wallets] = await Promise.all([
+   521→    db.cashWithdrawal.findMany({
+   522→      where: { userId, financialDate: dateRange },
+   523→      include: { sourceWallet: true },
+   524→    }),
+   525→    db.wallet.findMany({
+   526→      where: { userId },
+   527→      select: { id: true, name: true, color: true },
+   528→    }),
+   529→  ])
+   530→
+   531→  const total = withdrawals.reduce(
+   532→    (acc, w) => addMoney(acc, w.amount),
+   533→    '0.00'
+   534→  )
+   535→
+   536→  const byWalletMap = new Map<
+   537→    string,
+   538→    { walletId: string; name: string; color: string; amount: number }
+   539→  >()
+   540→  for (const w of withdrawals) {
+   541→    const wlt = wallets.find((x) => x.id === w.sourceWalletId)
+   542→    if (!wlt) continue
+   543→    const e = byWalletMap.get(wlt.id) ?? {
+   544→      walletId: wlt.id,
+   545→      name: wlt.name,
+   546→      color: wlt.color,
+   547→      amount: 0,
+   548→    }
+   549→    e.amount += toCents(w.amount)
+   550→    byWalletMap.set(wlt.id, e)
+   551→  }
+   552→  const byWallet = Array.from(byWalletMap.values())
+   553→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   554→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   555→
+   556→  return {
+   557→    total,
+   558→    byWallet,
+   559→    count: withdrawals.length,
+   560→  }
+   561→}
+   562→
+   563→/** Compute transfers section analytics. */
+   564→async function transfersSection(ctx: AnalyticsContext) {
+   565→  const { userId, start, end } = ctx
+   566→  const dateRange = { gte: start, lte: end }
+   567→
+   568→  const [transfers, wallets] = await Promise.all([
+   569→    db.walletTransfer.findMany({
+   570→      where: { userId, financialDate: dateRange },
+   571→      include: { sourceWallet: true, destWallet: true },
+   572→    }),
+   573→    db.wallet.findMany({
+   574→      where: { userId },
+   575→      select: { id: true, name: true, color: true },
+   576→    }),
+   577→  ])
+   578→
+   579→  const total = transfers.reduce((acc, t) => addMoney(acc, t.amount), '0.00')
+   580→
+   581→  const bySourceMap = new Map<
+   582→    string,
+   583→    { walletId: string; name: string; color: string; amount: number; count: number }
+   584→  >()
+   585→  const byDestMap = new Map<
+   586→    string,
+   587→    { walletId: string; name: string; color: string; amount: number; count: number }
+   588→  >()
+   589→
+   590→  for (const t of transfers) {
+   591→    const src = wallets.find((w) => w.id === t.sourceWalletId)
+   592→    if (src) {
+   593→      const e = bySourceMap.get(src.id) ?? {
+   594→        walletId: src.id,
+   595→        name: src.name,
+   596→        color: src.color,
+   597→        amount: 0,
+   598→        count: 0,
+   599→      }
+   600→      e.amount += toCents(t.amount)
+   601→      e.count += 1
+   602→      bySourceMap.set(src.id, e)
+   603→    }
+   604→    const dst = wallets.find((w) => w.id === t.destWalletId)
+   605→    if (dst) {
+   606→      const e = byDestMap.get(dst.id) ?? {
+   607→        walletId: dst.id,
+   608→        name: dst.name,
+   609→        color: dst.color,
+   610→        amount: 0,
+   611→        count: 0,
+   612→      }
+   613→      e.amount += toCents(t.amount)
+   614→      e.count += 1
+   615→      byDestMap.set(dst.id, e)
+   616→    }
+   617→  }
+   618→
+   619→  const bySource = Array.from(bySourceMap.values())
+   620→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   621→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   622→  const byDest = Array.from(byDestMap.values())
+   623→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   624→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   625→
+   626→  return {
+   627→    total,
+   628→    count: transfers.length,
+   629→    bySource,
+   630→    byDest,
+   631→  }
+   632→}
+   633→
+   634→/** Compute net cash flow section analytics. */
+   635→async function netCashFlowSection(ctx: AnalyticsContext) {
+   636→  const { userId, start, end } = ctx
+   637→  const dateRange = { gte: start, lte: end }
+   638→
+   639→  const [incomeRows, expenseRows] = await Promise.all([
+   640→    db.incomeTransaction.findMany({
+   641→      where: { userId, financialDate: dateRange },
+   642→      select: { amount: true, financialDate: true },
+   643→    }),
+   644→    db.expenseTransaction.findMany({
+   645→      where: { userId, financialDate: dateRange },
+   646→      select: { amount: true, financialDate: true },
+   647→    }),
+   648→  ])
+   649→
+   650→  const income = incomeRows.reduce((acc, r) => addMoney(acc, r.amount), '0.00')
+   651→  const expenses = expenseRows.reduce((acc, r) => addMoney(acc, r.amount), '0.00')
+   652→  const net = subMoney(income, expenses)
+   653→  const savingsRate = pct(net, income)
+   654→
+   655→  // Monthly buckets for 12 months ending at end-of-period.
+   656→  const endMonth = new Date(
+   657→    Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 0, 0, 0, 0)
+   658→  )
+   659→  const monthly: { month: string; income: string; expenses: string; net: string }[] =
+   660→    []
+   661→  for (let i = 11; i >= 0; i--) {
+   662→    const bStart = new Date(
+   663→      Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() - i, 1, 0, 0, 0, 0)
+   664→    )
+   665→    const bEnd = new Date(
+   666→      Date.UTC(bStart.getUTCFullYear(), bStart.getUTCMonth() + 1, 0, 23, 59, 59, 999)
+   667→    )
+   668→    const incCents = incomeRows
+   669→      .filter((r) => {
+   670→        const d =
+   671→          r.financialDate instanceof Date ? r.financialDate : new Date(r.financialDate)
+   672→        return d >= bStart && d <= bEnd
+   673→      })
+   674→      .reduce((s, r) => s + toCents(r.amount), 0)
+   675→    const expCents = expenseRows
+   676→      .filter((r) => {
+   677→        const d =
+   678→          r.financialDate instanceof Date ? r.financialDate : new Date(r.financialDate)
+   679→        return d >= bStart && d <= bEnd
+   680→      })
+   681→      .reduce((s, r) => s + toCents(r.amount), 0)
+   682→    monthly.push({
+   683→      month: ymKey(bStart),
+   684→      income: fromCents(incCents),
+   685→      expenses: fromCents(expCents),
+   686→      net: fromCents(incCents - expCents),
+   687→    })
+   688→  }
+   689→
+   690→  return {
+   691→    income,
+   692→    expenses,
+   693→    net,
+   694→    monthly,
+   695→    savingsRate: Math.round(savingsRate * 100) / 100,
+   696→  }
+   697→}
+   698→
+   699→/** Compute allocations section analytics. */
+   700→async function allocationsSection(ctx: AnalyticsContext) {
+   701→  const { userId } = ctx
+   702→
+   703→  const [allocations, settings] = await Promise.all([
+   704→    db.allocation.findMany({
+   705→      where: { userId },
+   706→      include: { bankCredit: true, category: true },
+   707→    }),
+   708→    db.appSettings.upsert({
+   709→      where: { id: 'singleton' },
+   710→      update: {},
+   711→      create: { id: 'singleton' },
+   712→    }),
+   713→  ])
+   714→
+   715→  let totalActive = 0
+   716→  let totalPassive = 0
+   717→  const byClassificationMap = new Map<
+   718→    string,
+   719→    { classification: string; count: number; amount: number }
+   720→  >()
+   721→
+   722→  for (const a of allocations) {
+   723→    const cents = toCents(a.amount)
+   724→    if (a.allocType === 'active') totalActive += cents
+   725→    else totalPassive += cents
+   726→    const e = byClassificationMap.get(a.classification) ?? {
+   727→      classification: a.classification,
+   728→      count: 0,
+   729→      amount: 0,
+   730→    }
+   731→    e.count += 1
+   732→    e.amount += cents
+   733→    byClassificationMap.set(a.classification, e)
+   734→  }
+   735→
+   736→  const referenceIncome = settings.referenceMonthlyIncome
+   737→  const totalAllocated = totalActive + totalPassive
+   738→  const unallocated = Math.max(0, toCents(referenceIncome) - totalActive)
+   739→  const utilization = pct(fromCents(totalActive), referenceIncome)
+   740→  const available = unallocated
+   741→
+   742→  const byClassification = Array.from(byClassificationMap.values())
+   743→    .map((e) => ({ ...e, amount: fromCents(e.amount) }))
+   744→    .sort((a, b) => toCents(b.amount) - toCents(a.amount))
+   745→
+   746→  return {
+   747→    referenceIncome,
+   748→    totalActive: fromCents(totalActive),
+   749→    totalPassive: fromCents(totalPassive),
+   750→    totalAllocated: fromCents(totalAllocated),
+   751→    unallocated: fromCents(unallocated),
+   752→    utilization: Math.round(utilization * 100) / 100,
+   753→    available: fromCents(available),
+   754→    byClassification,
+   755→  }
+   756→}
+   757→
+   758→/** Compute bank credits section analytics. */
+   759→async function bankCreditsSection(ctx: AnalyticsContext) {
+   760→  const { userId } = ctx
+   761→  const credits = await db.bankCredit.findMany({
+   762→    where: { userId },
+   763→    include: { repayments: { select: { amount: true } } },
+   764→  })
+   765→
+   766→  let originalDebtCents = 0
+   767→  let totalRepaidCents = 0
+   768→  for (const c of credits) {
+   769→    originalDebtCents += toCents(c.originalPrincipal)
+   770→    totalRepaidCents += c.repayments.reduce(
+   771→      (sum, r) => sum + toCents(r.amount),
+   772→      0
+   773→    )
+   774→  }
+   775→  const outstanding = Math.max(0, originalDebtCents - totalRepaidCents)
+   776→  const progressPct = pct(fromCents(totalRepaidCents), fromCents(originalDebtCents))
+   777→
+   778→  // Upcoming installments (next 10 pending, dueDate >= today).
+   779→  const today = new Date()
+   780→  today.setUTCHours(0, 0, 0, 0)
+   781→  const upcomingInstallments = await db.creditInstallment.findMany({
+   782→    where: {
+   783→      bankCredit: { userId },
+   784→      status: 'pending',
+   785→      dueDate: { gte: today },
+   786→    },
+   787→    include: { bankCredit: true },
+   788→    orderBy: { dueDate: 'asc' },
+   789→    take: 10,
+   790→  })
+   791→
+   792→  const summary = await Promise.all(
+   793→    credits.map(async (c) => ({
+   794→      id: c.id,
+   795→      creditName: c.creditName,
+   796→      lender: c.lender,
+   797→      ...(await computeCreditSummary(c)),
+   798→    }))
+   799→  )
+   800→
+   801→  return {
+   802→    originalDebt: fromCents(originalDebtCents),
+   803→    totalRepaid: fromCents(totalRepaidCents),
+   804→    outstanding: fromCents(outstanding),
+   805→    progressPct: Math.round(progressPct * 100) / 100,
+   806→    upcomingInstallments: upcomingInstallments.map((ins) => ({
+   807→      creditId: ins.bankCreditId,
+   808→      creditName: ins.bankCredit?.creditName ?? '',
+   809→      installmentNumber: ins.installmentNumber,
+   810→      dueDate: ins.dueDate,
+   811→      amount: ins.amount,
+   812→      status: ins.status,
+   813→    })),
+   814→    byCredit: summary,
+   815→  }
+   816→}
+   817→
+   818→/** Compute personal loans section analytics. */
+   819→async function personalLoansSection(ctx: AnalyticsContext) {
+   820→  const { userId } = ctx
+   821→  const loans = await db.personalLoan.findMany({
+   822→    where: { userId },
+   823→    include: {
+   824→      operations: { select: { operationType: true, amount: true } },
+   825→    },
+   826→  })
+   827→
+   828→  let totalLentCents = 0
+   829→  let totalRepaidCents = 0
+   830→
+   831→  const byBorrower = await Promise.all(
+   832→    loans.map(async (l) => {
+   833→      const summary = await computeLoanSummary(l)
+   834→      totalLentCents += toCents(summary.totalLent)
+   835→      totalRepaidCents += toCents(summary.totalRepaid)
+   836→      return {
+   837→        loanId: l.id,
+   838→        borrowerName: l.borrowerName,
+   839→        lent: summary.totalLent,
+   840→        repaid: summary.totalRepaid,
+   841→        outstanding: summary.outstanding,
+   842→        progressPct: summary.progressPct,
+   843→      }
+   844→    })
+   845→  )
+   846→
+   847→  const totalOutstanding = Math.max(0, totalLentCents - totalRepaidCents)
+   848→  const overallProgress = pct(
+   849→    fromCents(totalRepaidCents),
+   850→    fromCents(totalLentCents)
+   851→  )
+   852→
+   853→  return {
+   854→    totalLent: fromCents(totalLentCents),
+   855→    totalRepaid: fromCents(totalRepaidCents),
+   856→    outstanding: fromCents(totalOutstanding),
+   857→    progressPct: Math.round(overallProgress * 100) / 100,
+   858→    progressByBorrower: byBorrower.sort(
+   859→      (a, b) => toCents(b.outstanding) - toCents(a.outstanding)
+   860→    ),
+   861→  }
+   862→}
+   863→
+   864→/** Compute goals section analytics. */
+   865→async function goalsSection(ctx: AnalyticsContext) {
+   866→  const { userId } = ctx
+   867→
+   868→  const [goals, goalCats] = await Promise.all([
+   869→    db.goal.findMany({
+   870→      where: { userId },
+   871→      include: {
+   872→        goalCategory: { select: { id: true, name: true, color: true } },
+   873→      },
+   874→    }),
+   875→    db.goalCategory.findMany({
+   876→      where: { userId },
+   877→      select: { id: true, name: true, color: true },
+   878→    }),
+   879→  ])
+   880→
+   881→  // progressByYear
+   882→  const byYearMap = new Map<
+   883→    number,
+   884→    { year: number; count: number; completed: number; progressSum: number }
+   885→  >()
+   886→  for (const g of goals) {
+   887→    const e = byYearMap.get(g.year) ?? {
+   888→      year: g.year,
+   889→      count: 0,
+   890→      completed: 0,
+   891→      progressSum: 0,
+   892→    }
+   893→    e.count += 1
+   894→    if (g.status === 'completed') e.completed += 1
+   895→    e.progressSum += g.progress
+   896→    byYearMap.set(g.year, e)
+   897→  }
+   898→  const progressByYear = Array.from(byYearMap.values())
+   899→    .map((e) => ({
+   900→      year: e.year,
+   901→      count: e.count,
+   902→      completed: e.completed,
+   903→      overallProgress:
+   904→        e.count > 0
+   905→          ? Math.round((e.progressSum / e.count) * 100) / 100
+   906→          : 0,
+   907→    }))
+   908→    .sort((a, b) => b.year - a.year)
+   909→
+   910→  const totalGoals = goals.length
+   911→  const completedGoals = goals.filter((g) => g.status === 'completed').length
+   912→  const completionRate = totalGoals > 0 ? (completedGoals / totalGoals) * 100 : 0
+   913→
+   914→  // budgetProgress: aggregate required vs saved across all goals.
+   915→  let requiredCents = 0
+   916→  let savedCents = 0
+   917→  for (const g of goals) {
+   918→    requiredCents += toCents(g.requiredBudget ?? '0')
+   919→    savedCents += toCents(g.savedBudget ?? '0')
+   920→  }
+   921→  const budgetProgress = {
+   922→    required: fromCents(requiredCents),
+   923→    saved: fromCents(savedCents),
+   924→    remaining: fromCents(Math.max(0, requiredCents - savedCents)),
+   925→  }
+   926→
+   927→  // categoryComparison: aggregate per category.
+   928→  const byCatMap = new Map<
+   929→    string,
+   930→    { categoryName: string; color: string; count: number; progressSum: number }
+   931→  >()
+   932→  for (const g of goals) {
+   933→    const catId = g.goalCategoryId ?? 'uncategorized'
+   934→    const catName = g.goalCategory?.name ?? 'Uncategorized'
+   935→    const catColor = g.goalCategory?.color ?? '#64748b'
+   936→    const e = byCatMap.get(catId) ?? {
+   937→      categoryName: catName,
+   938→      color: catColor,
+   939→      count: 0,
+   940→      progressSum: 0,
+   941→    }
+   942→    e.count += 1
+   943→    e.progressSum += g.progress
+   944→    e.categoryName = catName
+   945→    e.color = catColor
+   946→    byCatMap.set(catId, e)
+   947→  }
+   948→  const categoryComparison = Array.from(byCatMap.values())
+   949→    .map((e) => ({
+   950→      categoryName: e.categoryName,
+   951→      color: e.color,
+   952→      count: e.count,
+   953→      avgProgress:
+   954→        e.count > 0 ? Math.round((e.progressSum / e.count) * 100) / 100 : 0,
+   955→    }))
+   956→    .sort((a, b) => b.count - a.count)
+   957→
+   958→  void goalCats
+   959→
+   960→  return {
+   961→    progressByYear,
+   962→    completionRate: Math.round(completionRate * 100) / 100,
+   963→    totalGoals,
+   964→    completedGoals,
+   965→    budgetProgress,
+   966→    categoryComparison,
+   967→  }
+   968→}
+   969→
+   970→const SECTION_BUILDERS: Record<
+   971→  Section,
+   972→  (ctx: AnalyticsContext) => Promise<unknown>
+   973→> = {
+   974→  income: incomeSection,
+   975→  expenses: expenseSection,
+   976→  wallets: walletsSection,
+   977→  cash_withdrawals: cashWithdrawalsSection,
+   978→  transfers: transfersSection,
+   979→  net_cash_flow: netCashFlowSection,
+   980→  allocations: allocationsSection,
+   981→  bank_credits: bankCreditsSection,
+   982→  personal_loans: personalLoansSection,
+   983→  goals: goalsSection,
+   984→}
+   985→
+   986→/** GET /api/analytics — multi-section analytics. */
+   987→export async function GET(req: Request) {
+   988→  return withAuth(async ({ userId }) => {
+   989→    const url = new URL(req.url)
+   990→    const filter = url.searchParams.get('filter') || 'this_month'
+   991→    const from = url.searchParams.get('from') || undefined
+   992→    const to = url.searchParams.get('to') || undefined
+   993→    const { start, end } = resolvePeriod(filter, from, to)
+   994→
+   995→    const sectionParam = url.searchParams.get('section')
+   996→    let sections: Section[]
+   997→    if (sectionParam) {
+   998→      const requested = sectionParam
+   999→        .split(',')
+  1000→        .map((s) => s.trim().toLowerCase())
+  1001→        .filter((s): s is Section => (ALL_SECTIONS as string[]).includes(s))
+  1002→      sections = requested.length > 0 ? requested : ALL_SECTIONS
+  1003→    } else {
+  1004→      sections = ALL_SECTIONS
+  1005→    }
+  1006→
+  1007→    const ctx: AnalyticsContext = { userId, start, end }
+  1008→
+  1009→    const result: Record<string, unknown> = {
+  1010→      period: { filter, start, end },
+  1011→    }
+  1012→    for (const section of sections) {
+  1013→      result[section] = await SECTION_BUILDERS[section](ctx)
+  1014→    }
+  1015→
+  1016→    return ok(serialize(result))
+  1017→  })(req)
+  1018→}
+  1019→

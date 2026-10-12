@@ -1,0 +1,200 @@
+  2. **Summary strip** — 3 stat cards in a `grid-cols-1 sm:grid-cols-3`. Used a local `SummaryStatCard` component (not the shared `StatCard`) so I can pass a raw money string and have it formatted via `money()` from `useI18n()`. Cards: Combined balance (`Scale` icon, info tone), Bank subtotal (`Landmark`, default), Cash subtotal (`Banknote`, default).
+  3. **Wallet cards grid** — responsive `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`. Each card uses `style={{ borderTop: '4px solid ' + (wallet.color ?? DEFAULT_COLOR) }}` per spec. Card header has a small colored icon square (tinted at 20% alpha with the wallet color text) with the `TYPE_ICON` mapping (`Landmark` for bank, `Wallet` for cash, `PiggyBank` for savings, `HelpCircle` for other), the wallet name as `CardTitle`, and three outline badges: type label (`t('wal.bank')` etc.), active/inactive (income/expense tone), and the "Allow overdraft" badge shown only when `allowOverdraft === true` (warning tone). The kebab `DropdownMenu` has 6 items: Transfer (`ArrowRightLeft`), Withdraw (`Banknote`), Adjust (`Scale`), View History (`HistoryIcon`), Edit (`Pencil`), Delete (`Trash2`, destructive). Card body shows the current balance (large, `tabular-nums`), the initial balance (small muted with prefix), and the description (`line-clamp-2`, only if present).
+  4. **Create/Edit dialog** (`Dialog`, `sm:max-w-[560px]`) — fields: Name (Input, required), Type (Select with bank/cash/savings/other), Color (`Input type="color"` plus a small hex label), Initial Balance (`Input type="number" step="0.01" inputMode="decimal"`). The Initial Balance input is `disabled={!!editing}` — when editing, a helper text in warning tone says "Initial balance — Edit: Adjust balance" (rephrased from the spec's "Initial balance cannot be edited; use Adjust instead" so it uses the existing i18n keys `common.edit` and `wal.adjust` instead of introducing a new one). Description (Textarea, 2 rows). Two side-by-side bordered Switch rows: "Allow overdraft (negative balance)" and "Status" (active/inactive, with the localized label next to the switch). On submit, builds a body containing only the editable fields and calls `createMutation.mutateAsync` (POST `/api/wallets`) or `updateMutation.mutateAsync` (PUT `/api/wallets/[id]`). The PUT body NEVER includes `initialBalance` (per backend constraint). Both mutations invalidate `['wallets']`, `['dashboard']`, `['analytics']` and close the dialog on success.
+  5. **Transfer dialog** (`sm:max-w-[520px]`) — Source wallet (Select with colored dots), Destination wallet (Select, filtered to exclude the source so same-wallet selection is impossible at the UI level), Amount (Input number, step 0.01), Date (Input date, defaults to today), Comment (Textarea). On submit, validates source !== dest (extra guard with `t('transfer.sameWallet')` toast), amount > 0 (`t('transfer.invalidAmount')`), and date set; POSTs to `/api/transfers`. On success: toast `t('transfer.created')`, invalidate wallets/dashboard/analytics, close dialog.
+  6. **Withdraw dialog** (`sm:max-w-[520px]`) — Withdrawal type as a `RadioGroup` (external/internal) using `Label + RadioGroupItem` with a card-style border that highlights on `has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5`. Source wallet (Select). Destination cash wallet (Select) only rendered when `withdrawType === 'internal'`. Amount, Date, Comment. On submit: if internal, validates dest is set and !== source; POSTs to `/api/withdrawals` with `{sourceWalletId, withdrawalType, amount, financialDate, destWalletId?, comment?}`.
+  7. **Adjust dialog** (`sm:max-w-[520px]`) — Wallet name is shown in the `DialogDescription` (read-only). Two bordered info boxes side-by-side: "System balance" (large, fetched via `useQuery(['wallet', adjustWallet.id], '/api/wallets/[id]')` enabled only when dialog opens — shows `…` while loading and falls back to the wallet's `balance` from the list response if the detail query hasn't resolved yet) and "Initial balance" (large, muted). A `RadioGroup` mode toggle (two card-style options: "By actual balance" / "By adjustment amount"). When mode=actual: shows an Actual balance number input. When mode=adjustment: shows an Adjustment input (can be negative, placeholder `-100.00`) with a small muted hint `· +/−`. Date (Input date, defaults to today). Reason (Textarea, required, min 3 chars per backend zod schema — toast `t('adjust.reasonRequired')` if too short). On submit: POSTs to `/api/adjustments` with `{walletId, financialDate, reason, actualBalance? | adjustment?}`.
+  8. **History dialog** (`sm:max-w-[900px]`, full-width) — shows the wallet name in the title. A 4-column filter row (From date, To date, Search comment with leading `Search` icon). An "Export CSV" outline button (calls `/api/wallets/[id]/history/export?from=&to=&search=`). A bordered `max-h-[460px] overflow-y-auto scrollbar-thin` table container. Columns: Date (`date()` from i18n), Operation type (outline badge with `t('wal.operation.X')` — falls back to the raw op string if no key), Direction (outline badge, income/expense tone, label `t('wal.direction.credit/debit')`), Amount (signed — credit shows `+amount`, debit shows `-amount` via `fromCents(-toCents(amount))`, colored via `MoneyText tone="income"|"expense"`), Comment (truncated `line-clamp-1`). Sticky table header. Pagination below with `buildPageList` ellipsis helper (same pattern as `transactions-shared.tsx`). The dialog footer has a single "Close" button.
+  9. **Delete confirmation** — `ConfirmDialog` with `destructive` variant; description shows the wallet name. On confirm, calls `deleteMutation.mutateAsync(id)` → toast `t('common.delete')` → invalidate wallets/dashboard/analytics → close dialog. The backend returns 400 with a helpful message if the wallet has ledger entries (which `useApi` surfaces as a toast), so users with transactions are guided to archive instead.
+- Data fetching & cache invalidation: `useQuery(['wallets'])` for the main list; `useQuery(['wallet', adjustWallet?.id], '/api/wallets/[id]')` for the system-balance lookup in the adjust dialog (enabled only when the dialog is open and a wallet is selected); `useQuery(['wallet', historyWallet?.id, 'history', historyParams], '/api/wallets/[id]/history')` for the history table (enabled only when the history dialog is open). All mutations invalidate `['wallets']`, `['dashboard']`, `['analytics']` so the sidebar wallet balances, dashboard cards/charts, and analytics sections all stay in sync after every create/update/delete/transfer/withdraw/adjust.
+- Two effects keep history pagination sane: (1) reset to page 1 whenever any history filter or the target wallet changes; (2) auto-clamp `historyPage` if it drifts past the last page (e.g. after switching from a wallet with many entries to one with fewer).
+- Validation: every form field with `*` is validated before submit; failures surface as toast errors via `toast.error()`. Errors from the backend (e.g. insufficient funds, cannot delete wallet with transactions, wallet not found) are auto-toasted by `useApi`'s wrapper, so the dialog stays open and the user can fix & retry.
+- TypeScript types declared at the top of the file (`Wallet`, `WalletType`, `WalletsListResponse`, `WalletDetailResponse`, `LedgerEntry`, `HistoryResponse`) — no `any`. The wallet card's `currentBalance ?? balance` fallback is typed defensively in case the backend ever adds the `currentBalance` key.
+- Visual touches: wallet card uses an inline-style `borderTop: 4px solid <color>` accent, the colored icon square in the header uses `backgroundColor: ${color}20` (hex alpha 20) with `color: <color>` text, the hover state uses `transition-shadow hover:shadow-md`. Badges for active/inactive/overdraft use semantic tokens (`border-income/30 text-income`, `border-expense/30 text-expense`, `border-warning/30 text-warning`) so they adapt to light/dark theme. The RadioGroup labels in the withdraw and adjust dialogs use the `has-[[data-state=checked]]` Tailwind variant for a card-style selected state.
+- Localization: every visible string goes through `t()` — `wal.*`, `transfer.*`, `withdraw.*`, `adjust.*`, `common.*`. No new i18n keys were introduced (the existing dictionary already covered every key this view needs). Date formatting uses `date()` from `useI18n()` (Africa/Casablanca tz, locale-aware). Money formatting uses `money()` from `useI18n()`.
+- `cd /home/z/my-project && bun run lint` — 0 errors in `wallets-view.tsx`. (1 unrelated warning in `src/components/boot.tsx` from a stale `eslint-disable` directive — not my file.)
+- `bunx tsc --noEmit --skipLibCheck` — 0 errors in `wallets-view.tsx` after one fix: the initial implementation passed `op` (string) as the second arg to `t()` in `operationLabel`, which expected `Record<string, string | number>`; removed the second arg since `t(\`wal.operation.${op}\`)` is a plain lookup with no interpolation. (The pre-existing tsc errors in backend Prisma routes from Tasks 3-5 are unrelated to my file.)
+- `tail dev.log` after my changes shows `✓ Compiled in 231ms / 507ms / 385ms` and `GET / 200` with no errors — the file compiles cleanly in the dev server.
+
+Stage Summary:
+- Delivered `src/components/views/wallets-view.tsx` (~1600 lines incl. blank lines) — feature-complete: PageHeader with CSV export + Add actions; 3-card summary strip (Combined / Bank subtotal / Cash subtotal); responsive 1/2/3-col wallet cards grid with colored top stripe, type icon, type/active/overdraft badges, current + initial balance, and a 6-action kebab menu; create/edit dialog with all required fields including initialBalance-locked-on-edit + helper text + Allow Overdraft & Active switches; transfer dialog with same-wallet UI guard; withdraw dialog with external/internal RadioGroup toggle and conditional destination select; adjust dialog with system-balance lookup, RadioGroup mode toggle (actual vs adjustment), and reason validation; full-width history dialog with from/to/search filters, signed+colored amount column, sticky table, pagination, and per-wallet CSV export; destructive delete confirmation.
+- All data flows through TanStack Query (`['wallets']` list, `['wallet', id]` detail for adjust system-balance, `['wallet', id, 'history', params]` for the ledger). Every mutation (create/update/delete/transfer/withdraw/adjust) invalidates `['wallets']`, `['dashboard']`, `['analytics']` so dependent views stay consistent.
+- No Prisma schema changes. No test files. No other files modified. No new i18n keys. No new dependencies. Only `src/components/views/wallets-view.tsx` was touched.
+- Ready: `WalletsView` is already wired up in `src/components/app-shell.tsx` (case `'wallets'`) — no further work needed for end-to-end UX.
+
+---
+Task ID: 10b
+Agent: view-builder (ArticlesView + CategoriesView)
+Task: Implement `src/components/views/articles-view.tsx` (exports `ArticlesView`) and `src/components/views/categories-view.tsx` (exports `CategoriesView`), replacing the 1-line stubs.
+
+Work Log:
+- Read `worklog.md` and existing infrastructure (shared.tsx, confirm-dialog.tsx, use-i18n.ts, use-api.ts, wallets-view.tsx, transactions-shared.tsx, dropdown-menu.tsx, badge.tsx, scroll-area.tsx, tabs.tsx) to align with established conventions.
+- Confirmed backend behavior by reading `src/app/api/categories/route.ts` and `src/app/api/categories/[id]/route.ts` (PUT supports partial updates incl. `archived`; GET defaults to `archived=false` when omitted; DELETE returns 409 `'This category is referenced…'`).
+
+ArticlesView (`articles-view.tsx`):
+- `'use client'`; uses `useI18n`, `useApi`, `useQueryClient`, `useQuery`, `useMutation`, `toast`.
+- `PageHeader` titled `t('art.title')` with an "Add" button.
+- Filter bar: controlled `Tabs` (expense | income, default 'expense') + "Active only" `Switch` (default off → all articles; on → `active=true`) + `Search` input.
+- Table inside `<ScrollArea className="max-h-[600px] scrollbar-thin">` with columns: Name, Type badge (income → `bg-income/15 text-income`, expense → `bg-expense/15 text-expense`), Default amount via `money()`, Default category colored badge (inline `backgroundColor: cat.color`, white text, dot) or "—", Active/Inactive badge, Description (truncated via `line-clamp-1`), Actions kebab (Edit / Delete-destructive).
+- Loading skeletons + `EmptyState` with Add action when no articles.
+- Create/Edit `Dialog` (`max-w-lg`): Name input, Type Select (income/expense), Default Amount `<Input type="number" step="0.01">`, Default Category Select (refetched via `['categories', formType, 'articles-form']` when the form type changes — Select lists "None" + categories matching `formType`), Description Textarea, Active Switch.
+- Default-category Select uses sentinel `__none__` value because Radix Select rejects empty strings.
+- Changing form Type resets `formDefaultCategoryId` (the old category may not belong to the new type).
+- Mutations: `createMutation` (POST `/api/articles`), `updateMutation` (PUT `/api/articles/[id]`), `deleteMutation` (DELETE) — all invalidate `['articles']` (and only that, since the worklog indicates articles don't affect balances). 409 errors during delete are surfaced via the `useApi` toast (it throws and toasts on non-2xx).
+- `ConfirmDialog` for deletes with the article name as description.
+
+CategoriesView (`categories-view.tsx`):
+- `'use client'`; same hooks as above.
+- `PageHeader` titled `t('cat.title')` with an "Add" button.
+- Filter bar: controlled `Tabs` (expense | income, default 'expense') + "Archived" `Switch` (default off → active categories via `archived=false`; on → archived categories via `archived=true`) + `Search` input. (Chose this mapping because the backend defaults `archived=false` when the param is omitted, so passing `archived=false` keeps the request explicit and stable.)
+- Responsive grid of category cards (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`). Each card has a left color swatch (absolute inset-y bar, `width: 0.375rem`, inline `backgroundColor: c.color ?? DEFAULT_COLOR`), CardTitle (truncate), type badge, optional "Archived" badge (warning tone) and a kebab menu with Edit / Archive|Unarchive / Delete.
+- Archive toggle: `updateMutation.mutateAsync({ id, body: { archived: !c.archived } })` — partial PUT, toasts `t('cat.archivedMsg')`.
+- Loading skeletons grid + `EmptyState` with Add action when no categories.
+- Create/Edit `Dialog` (`max-w-lg`): Name input, Type Select, Color (`<Input type="color">` paired with a hex text input), Description Textarea, Archived Switch.
+- Mutations: `createMutation` (POST `/api/categories`), `updateMutation` (PUT, used both for full edits and archive toggles — distinguished in `onSuccess` by checking if `body.archived` is the only key), `deleteMutation` (DELETE). All invalidate `['categories']` AND `['articles']` (articles cache a `defaultCategory` snapshot).
+- 409 conflict (referenced by historical transactions) is surfaced via the `useApi` toast automatically.
+- `ConfirmDialog` for deletes with the category name as description.
+
+Conventions followed:
+- All API requests use relative paths only (`/api/articles`, `/api/categories`).
+- No new route, no app-shell or Prisma schema changes, no test files.
+- shadcn/ui components used throughout (Card, Button, Input, Label, Select, Dialog, Table, Badge, Skeleton, ScrollArea, Textarea, DropdownMenu, Tabs, Switch).
+- `useQuery` for fetching, `useMutation` for writes, `qc.invalidateQueries` after each mutation.
+- All money formatting via `money()` from `useI18n`.
+
+Lint: `bun run lint` → 0 errors (only a pre-existing warning in `src/components/boot.tsx`, untouched by this task).
+Dev log: latest entries show `GET /api/articles?type=expense 200` and `GET /api/categories?type=expense&archived=false 200` returning 200 — both views mount cleanly and compile without errors.
+
+Stage Summary:
+The Articles and Categories management views are fully implemented end-to-end (list + filter + create + edit + delete + archive + active toggle). Both components are wired to the existing backend endpoints and follow the project's established patterns (query keys, mutation invalidation, i18n keys, shadcn/ui components, ConfirmDialog usage). They are reachable from the app-shell sidebar navigation which is already configured to render these views.
+
+---
+Task ID: 11a
+Agent: frontend-allocations-view
+Task: Implement the Assets & Liabilities (Allocations) view (`src/components/views/allocations-view.tsx`) — a polished, single-route client view featuring the Excel-inspired "unit allocation" visualization, summary strip, allocation card grid, and a create/edit dialog with conditional credit-linking, category, and manual-progress fields.
+
+Work Log:
+- Read `worklog.md` (Tasks 1, 4, 5, 6, 8, 9, 10a, 10b) to align with established patterns: shared components (`StatCard`, `EmptyState`, `MoneyText`, `PageHeader` in `src/components/shared.tsx`), `ConfirmDialog`, `useI18n()` (`locale, t, money, num, date, dateTime`), `useApi()` (`get, post, put, del` with auto-toast on non-2xx), `money.ts` (`toCents`, `fromCents`, `addMoney`, `subMoney`, `pct`, `isPositiveMoney`), and the allocations backend (`/api/allocations` GET returns `{ items, summary }` with summary fields `referenceIncome, unitValue, totalActive, totalPassive, totalAllocated, unallocated, utilization, available`; POST/PUT validate `name, allocType(active|passive), classification(credit|monthly_expense|completed|other), amount(string), color?, bankCreditId?, categoryId?, progress?(0-100), status?, comment?`; DELETE by-id; the bank-credits list endpoint returns items already merged with `computeCreditSummary` fields `totalRepaid, outstanding, progressPct, paidInstallments, ...`; `computeAllocationProgress` derives the progress percentage for credit-linked allocations).
+- Confirmed i18n keys exist in both EN & FR dictionaries for `alloc.*` (title, add, edit, active, passive, classification, class.credit/monthly_expense/completed/other, referenceIncome, totalActive, totalPassive, totalAllocated, unallocated, utilization, available, unitValue, linkedCredit, empty, created, updated, note). Reused `common.*` (active, all, amount, cancel, category, color, comment, create, delete, edit, filter, loading, name, none, progress, required, save, search, status, type), `credit.originalPrincipal/totalRepaid/outstanding`, and `goal.status.completed/on_hold` for the status labels (no existing key conflicts — those keys were used by Tasks 9/10 and match semantically).
+- Replaced the 1-line stub with a ~1145-line `'use client'` component. Imports include `useMemo, useState` from React; `useQuery, useMutation, useQueryClient` from `@tanstack/react-query`; `toast` from `sonner`; the shadcn/ui set (Card, Button, Input, Label, Textarea, Badge, Skeleton, Progress, Select, Dialog, DropdownMenu); `StatCard, EmptyState, MoneyText, PageHeader` from `@/components/shared`; `ConfirmDialog`; `useI18n`, `useApi`; `toCents, pct` from `@/lib/money`; `cn` from `@/lib/utils`; and a curated set of lucide icons (`Plus, Pencil, Trash2, MoreHorizontal, Search, Info, Layers, TrendingUp, TrendingDown, Wallet, PieChart, CircleDollarSign, Gauge, AlertTriangle, Link2`).
+
+Layout (top → bottom):
+1. **PageHeader** titled `t('alloc.title')` ("Assets & Liabilities" / "Actifs & passifs") with a single primary "Add" button (icon + label, label `hidden sm:inline` on mobile).
+2. **Info note** — a small `Info`-icon banner in info tone immediately below the header explaining `t('alloc.note')` ("Allocations are planning records. They do not debit wallets."). Visible on every screen so the planning/non-debiting nature is unmissable.
+3. **Summary strip** — 7 `StatCard`s in a responsive `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7`:
+   - Reference income (`CircleDollarSign`, default tone, hint shows `{totalUnits} × {unitValue}`).
+   - Total active (`TrendingUp`, income tone).
+   - Total passive (`TrendingDown`, expense tone).
+   - Total allocated (`Wallet`, default tone).
+   - Unallocated (`PieChart`, info tone).
+   - Utilization (`Gauge`, default tone — switches to warning tone when `totalActive > referenceIncome`).
+   - Available capacity (`Layers`, info tone).
+   All values via `money()` from `useI18n()`; utilization rendered as `${num(utilization)}%`.
+4. **Filters Card** — 4-column responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`): search input with leading `Search` icon, type Select (All/active/passive), classification Select (All + 4 classes), status Select (All + active/completed/on_hold). Sentinel value `__all__` used because Radix Select rejects empty strings. A "Clear filters" ghost button appears only when any filter is active.
+5. **Unit visualization Card** — the Excel-inspired unit grid. Header shows `CardTitle` + a muted description `{totalUnits} × {unitValue} = {referenceIncome}` (literal numbers, no new i18n keys needed) + a small inline legend (gray square = unallocated, dashed square = partial). Body:
+   - Computes `totalUnits = ceil(referenceIncome / unitValue)` via `useMemo`.
+   - `buildUnitSquares()` walks allocations in order, each consuming `floor(units)` full squares + 1 partial square if fractional (using `repeating-linear-gradient` + `opacity-50` styling to visually distinguish partials).
+   - Squares are rendered as `h-4 w-4 rounded-sm` flex-wrap divs with `gap-1`, each carrying a `title` attribute tooltip (`{name} · {money(amount)}`).
+   - Unused squares are filled with muted gray (`bg-muted-foreground/15`) and labeled "Unallocated" on hover.
+   - Safety cap at `MAX_SQUARES = 1000` DOM nodes; when actual `totalUnits` exceeds the cap, a truncated count is shown (`{MAX_SQUARES} / {totalUnits}`) so users know they should raise `unitValue` in Settings.
+   - Overflow warning: when `totalActive > referenceIncome`, a warning-toned banner with `AlertTriangle` icon is rendered below the grid.
+   - Legend grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`): for every allocation, shows color swatch + name + `{money(amount)} · {utilizationPct}%` (where `utilizationPct = pct(amount, referenceIncome)`) + an outline type badge.
+6. **Allocation records Card** — header shows record count. Body is a responsive card grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`). Each card has:
+   - A 1.5-px color stripe across the top (inline `backgroundColor: a.color ?? DEFAULT_COLOR`).
+   - Header row: small color swatch + name (truncated) + type badge (active=income tone, passive=expense tone) + classification badge, with a kebab `DropdownMenu` (Edit / Delete-destructive).
+   - Amount via `MoneyText` (with the allocation's tone — `income` for active, `expense` for passive) at `text-lg`.
+   - Progress bar (`Progress` component) with a label showing `{num(progressPct)}%`. Progress is `a.progress` which the backend already computes correctly (credit-derived for credit-linked allocations, manual for the rest).
+   - Linked bank credit line (`Link2` icon + credit name) — only when `bankCreditId` is set.
+   - Category dot + name — only when `categoryId` is set.
+   - Status badge (active=info, completed=income, on_hold=warning tones).
+   - Optional comment (`line-clamp-2`).
+   Loading state renders 6 skeleton cards; empty state renders `EmptyState` with `t('alloc.empty')` and an Add action.
+
+Create/Edit dialog (`sm:max-w-[560px]`, `max-h-[90vh] overflow-y-auto`):
+- Fields: Name (Input, required), Type (Select active/passive), Classification (Select credit/monthly_expense/completed/other), Amount (Input `type=number step="0.01" min="0" inputMode="decimal"`, required), Color (native `<input type="color">` paired with a hex label), Linked bank credit (Select — only shown when `classification === 'credit'`; options come from a `useQuery(['bank-credits', 'allocations-form'])` against `/api/bank-credits`), Category (Select — `useQuery(['categories', 'expense', 'allocations-form'])` against `/api/categories?type=expense`; "None" first), Manual progress (Input `type=number min=0 max=100 step=1` — only shown when NOT (classification === 'credit' && bankCreditId selected), because credit-linked progress is derived), Status (Select active/completed/on_hold), Comment (Textarea).
+- When a bank credit is selected, a 4-column summary panel appears below the Select showing: original principal, total repaid (income tone), outstanding (expense tone), progress % — all derived from the credit's already-merged summary fields.
+- Sentinel value `__none__` used for the "None" options in the credit and category selects (Radix rejects empty strings).
+- On submit: validates name non-empty (`toast.error`) and amount > 0; builds a body containing only the relevant fields (always sends `bankCreditId: null` and `categoryId: null` when none selected, so PUT properly clears them; only sends `progress` when NOT credit-linked since the backend ignores it for credit-linked allocations anyway); calls `createMutation.mutateAsync` (POST `/api/allocations`) or `updateMutation.mutateAsync` (PUT `/api/allocations/[id]`). The submit button shows `t('common.loading')` while submitting and is disabled.
+- Errors from the backend (e.g. "Bank credit not found.", "Category not found.") are auto-toasted by `useApi`'s wrapper — the dialog stays open so the user can fix & retry.
+
+Delete confirmation:
+- `ConfirmDialog` with `destructive` variant; description shows the allocation name. On confirm, `deleteMutation.mutateAsync(id)` → toast `t('common.delete')` → invalidate `['allocations']`, `['dashboard']`, `['analytics']` → close.
+
+Data fetching & cache invalidation:
+- `useQuery(['allocations', queryFilters])` → `api.get<AllocListResponse>('/api/allocations', { query: queryFilters })` where `queryFilters` is a `useMemo` of `{ type?, classification?, status?, search? }` (each `undefined` when sentinel).
+- `useQuery(['bank-credits', 'allocations-form'])` → `api.get<BankCreditsListResponse>('/api/bank-credits')` (prefetch for the dialog).
+- `useQuery(['categories', 'expense', 'allocations-form'])` → `api.get<CategoriesListResponse>('/api/categories', { query: { type: 'expense' } })` (prefetch for the dialog).
+- All three run in parallel on mount; the credit/category lists populate the form Selects as they resolve.
+- Every mutation (create/update/delete) invalidates `['allocations']`, `['dashboard']`, `['analytics']` so the dashboard's allocations section and analytics charts stay in sync.
+
+Visual / responsive touches:
+- All tones use the semantic Tailwind tokens (`text-income`, `text-expense`, `text-warning`, `text-info`, `bg-income/10`, `border-info/30`, etc.) so the page adapts to light/dark theme.
+- The unit-grid squares use inline `backgroundColor` (since colors are dynamic per-allocation), partial squares get a `repeating-linear-gradient` overlay + `opacity-50` to visually distinguish them.
+- Squares have a `transition-transform hover:scale-125 hover:z-10` effect so hovering an individual square pops it slightly for visual feedback.
+- Allocation cards use a top color stripe (1.5-px) instead of a left stripe so they pair visually with the unit-grid legend.
+- The summary strip is `grid-cols-2` on mobile (so the 7 cards tile cleanly) and scales up to 7 columns on `xl:`.
+
+TypeScript / lint:
+- All types declared at the top of the file (`AllocType, Classification, AllocStatus, BankCredit, Category, Allocation, AllocSummary, AllocListResponse, BankCreditsListResponse, CategoriesListResponse, SquareInfo`). No `any`. Type guards `isAllocType`, `isClassification`, `isAllocStatus` enforce enum-like runtime safety on Select change handlers.
+- `cd /home/z/my-project && bun run lint` → 0 errors in `allocations-view.tsx`. (1 pre-existing warning in `src/components/boot.tsx` from a stale `eslint-disable` directive — not my file.)
+- `bunx tsc --noEmit --skipLibCheck` → 0 errors in `allocations-view.tsx`. (Pre-existing errors in `src/app/api/withdrawals/route.ts` and `src/lib/auth.ts` from earlier tasks are unrelated.)
+- `tail -20 dev.log` shows `✓ Compiled in 332ms / 155ms / 143ms / 136ms / 154ms / 137ms / 161ms` with no errors after my changes — the file compiles cleanly in the dev server.
+
+Stage Summary:
+- Delivered `src/components/views/allocations-view.tsx` (~1145 lines) — feature-complete Assets & Liabilities page with the showpiece Excel-inspired unit-grid visualization: each `unitValue` MAD of the reference income is rendered as a small color-coded square, allocated by walking allocations in order and consuming `floor(units)` full squares + 1 partial square per fractional allocation; unused squares are muted gray; hover pops a tooltip with `{name} · {money(amount)}`; legend below maps every allocation color → name + amount + utilization %.
+- 7-card summary strip (Reference income / Total active / Total passive / Total allocated / Unallocated / Utilization / Available) using the shared `StatCard` with semantic tones; utilization card switches to warning tone when allocations exceed reference income.
+- Filters: search + type + classification + status Selects with sentinel `__all__` values; "Clear filters" ghost button appears only when active.
+- Allocation records rendered as a responsive card grid (1/2/3 cols) with top color stripe, type/classification badges, amount via `MoneyText` (income/expense tone by alloc type), `Progress` bar with %, optional linked-credit/category rows, status badge, kebab Edit/Delete actions.
+- Create/Edit dialog with all required fields; the credit-Select and credit-summary panel appear only when `classification === 'credit'`; the manual-progress Input appears only when NOT credit-linked. Color input is a native color picker. Category and credit selects use `__none__` sentinel for "None" (Radix rejects empty strings).
+- Destructive `ConfirmDialog` for deletes.
+- `EmptyState` with `t('alloc.empty')` + Add action when no allocations exist.
+- Visible info note (`t('alloc.note')`) in an info-toned banner below the header — the planning/non-debiting semantics are unmissable.
+- All money arithmetic uses `toCents`/`pct` from `@/lib/money`; all rendering via `money()`, `num()` from `useI18n()` for locale-aware formatting.
+- All API requests use relative paths only (`/api/allocations`, `/api/allocations/[id]`, `/api/bank-credits`, `/api/categories?type=expense`).
+- No Prisma schema changes. No test files. No new i18n keys. No new dependencies. Only `src/components/views/allocations-view.tsx` was touched.
+- Ready: `AllocationsView` is already wired up in `src/components/app-shell.tsx` (case `'allocations'`) — no further work needed for end-to-end UX.
+
+---
+Task ID: 11b
+Agent: bank-credits-view
+Task: Implement the Bank Credits view (`src/components/views/bank-credits-view.tsx`) — a polished Bank Credits page with credit-card-style visuals, installment schedule, repayment dialog, and full CRUD against `/api/bank-credits*`.
+
+Work Log:
+- Read the worklog, existing views (`wallets-view.tsx`, `dashboard-view.tsx`), shared components (`shared.tsx`, `confirm-dialog.tsx`), and the bank-credits API routes (`/api/bank-credits`, `/api/bank-credits/[id]`, `/api/bank-credits/[id]/repayments`) to align with established patterns (useApi + useMutation + useQuery, toast on errors, invalidate after mutations).
+- Replaced the 1-line stub with a ~1220-line implementation:
+  1. **PageHeader** with `t('credit.title')` title and an Add button that opens the Create dialog.
+  2. **Credits list grid** (1 col mobile / 2 cols sm+) where each credit renders as a credit-card-style Card:
+     - Top stripe (4px `borderTop`) tinted by `creditCardColor(progressPct)` — red (<50%), orange (50–<70%), dark green (70–<90%), green (90–100%).
+     - Subtle diagonal gradient overlay (`linear-gradient(135deg, ${tint}, transparent 60%)`) tinted with the same color for a credit-card feel.
+     - Header row: Landmark icon chip (color-matched) + credit name; lender + status badges.
+     - Hero block: large outstanding amount colored by the same palette.
+     - Quick-stats row: original principal / monthly installment / duration (months) / progress %.
+     - Custom progress bar (hand-rolled div instead of shadcn `Progress` because the shadcn indicator is hardcoded to `bg-primary`); the fill width is the progressPct and the `backgroundColor` is the card stripe color.
+     - 4 MiniStat tiles: Total repaid (income tone), Paid installments / total (info), Next due date, Expected end date.
+     - Optional description (`line-clamp-2`).
+     - Kebab menu (DropdownMenu): View Schedule, Add Repayment, Edit, Delete.
+  3. **Create/Edit dialog**: fields for Credit name, Lender, Original principal, Duration months, Start date, Monthly installment, Interest rate (optional), Fees (optional), Payment day (1–31), Description, Status (Select: active / completed / on_hold). All wrapped in a `ScrollArea` (max-h-[70vh]) for small screens. Validation per field with toast.error on miss.
+  4. **Schedule dialog**: fetches `/api/bank-credits/[id]` on open (via `useQuery(['bank-credit', id])`, `enabled` when dialog open). Renders a 2/4-column grid of installment segments, each colored by `installmentSegment(inst)`:
+     - paid → green tint + green border + green badge.
+     - pending + dueDate < today → red tint + red border + red badge.
+     - pending + future → orange tint + orange border + orange badge.
+     - Each segment shows installment number (#N), status badge, due date, and amount.
+     - When multiple years are present, groups by year with a header row (Flag icon + `t('common.year') {year}` + horizontal rule).
+     - Legend at the top (paid / overdue / remaining).
+  5. **Add Repayment dialog**: Amount, Payment date (default today), Comment, Wallet (Select — optional, fetched from `/api/wallets`). Sub-select with a `__none__` sentinel SelectItem for "None". On submit POSTs to `/api/bank-credits/[id]/repayments` with `walletId: null` when None.
+  6. **Delete**: `ConfirmDialog` (destructive). On 409 ("Cannot delete a credit with repayments"), the useApi wrapper toasts the error; the mutation throws; `await deleteMutation.mutateAsync(id)` propagates the throw out of `onConfirm`, so ConfirmDialog's `onOpenChange(false)` is never called and the dialog remains open — surfacing the conflict.
+  7. **Empty state**: `EmptyState` with `t('credit.empty')` and an Add button. Skeleton placeholders during initial load.
+- Mutations: `createMutation`, `updateMutation`, `deleteMutation`, `repaymentMutation` — each invalidates `['bank-credits']`, `['bank-credit', id]` (when relevant), `['dashboard']`, and `['analytics']` on success.
+- Strict TypeScript types for `BankCredit`, `BankCreditDetail`, `CreditInstallment`, `CreditRepayment`, `Wallet`, `WalletsResponse`, `BankCreditsListResponse`. No `any`.
+- Status labels reuse existing i18n keys (active → `common.active`, completed → `goal.status.completed`, on_hold → `goal.status.on_hold`) so no changes to i18n.ts were required.
+- All API requests use relative paths only (`/api/bank-credits`, `/api/bank-credits/${id}`, etc.) per the gateway rules.
+- Sticky footer behavior is handled by the existing app-shell wrapper.
+
+Validation:
+- `bun run lint` → 0 errors in `bank-credits-view.tsx`. (1 pre-existing warning in `src/components/boot.tsx` — not my file.)
+- `tail -40 dev.log` → `✓ Compiled in 144ms` / `✓ Compiled in 146ms`, no compile errors, no Fast Refresh runtime errors after my final edits.
+- Verified `BankCreditsView` is wired in `src/components/app-shell.tsx` (`case 'bankCredits': return <BankCreditsView />`) — no changes needed there.
+
+Stage Summary:
+- Bank Credits view is feature-complete: credit-card-style visuals (color-shifts by progress), responsive 1/2-column grid, kebab menu actions (View Schedule / Add Repayment / Edit / Delete), create/edit dialog with all 11 fields, schedule dialog with year-grouped color-coded installment segments + legend, repayment dialog with optional wallet association, ConfirmDialog for delete with 409 surface, empty state, skeletons during load, and full React Query cache invalidation (list + dashboard + analytics).
+- No Prisma schema changes. No app-shell changes. No test files. Only the single file `src/components/views/bank-credits-view.tsx` was modified.

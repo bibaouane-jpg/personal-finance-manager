@@ -1,0 +1,1564 @@
+# MASTER PROMPT — PERSONAL FINANCE MANAGEMENT WEB APPLICATION
+## Production-Ready, Bilingual, Self-Hosted on Coolify
+
+You are a senior full-stack software engineer, software architect, financial systems engineer, database specialist, security engineer, UI/UX designer, and QA engineer.
+
+Your mission is to DESIGN, BUILD, TEST, AND PREPARE FOR DEPLOYMENT a complete personal finance management web application for one private user.
+
+This is a real application, not a UI mockup, static prototype, or dashboard demonstration.
+
+The application will be hosted on my own Ubuntu VPS using Coolify. It must use a persistent PostgreSQL database, secure authentication, reliable financial calculations, and a modern responsive interface.
+
+I have provided two Excel screenshots showing my current financial management system. Analyze them and use them as functional references for:
+1. Income allocation, assets, liabilities, recurring expenses, and credit obligations.
+2. Annual goals, priorities, budgets, progress, and completion status.
+
+Improve the original Excel system while preserving its useful logic.
+
+Do not ask me to rewrite requirements that are already specified here. Make reasonable implementation decisions, document them, and build the application.
+
+---
+
+# 1. CORE REQUIREMENTS
+
+Build an application that allows me to manage:
+
+- Personal income.
+- Personal expenses.
+- Bank accounts and cash wallets.
+- Transfers between wallets.
+- Cash withdrawals.
+- Wallet balance adjustments.
+- Transaction categories and reusable articles.
+- Income allocation and assets/liabilities planning.
+- Bank loans and credit repayment schedules.
+- Money lent to family members and friends.
+- Annual personal, family, career, and business goals.
+- Financial analytics and historical reports.
+- Application branding, language, currency, and preferences.
+- Secure data exports and database backups.
+
+Every page must be connected to the real backend and database.
+
+Every button must perform its advertised action.
+
+All financial mutations must be validated on the server.
+
+All important financial operations must be covered by automated tests.
+
+Never substitute fake functionality for working features.
+
+# 2. TECHNOLOGY STACK
+
+Use the following stack:
+
+- Next.js with TypeScript.
+- React.
+- Tailwind CSS.
+- shadcn/ui.
+- Lucide icons.
+- Recharts for charts.
+- PostgreSQL.
+- Prisma ORM.
+- Zod validation.
+- React Hook Form.
+- next-intl or another appropriate Next.js internationalization library.
+- Secure server-side authentication.
+- Argon2id password hashing or an equivalent secure password-hashing solution.
+- Vitest or Jest for unit and integration tests.
+- Playwright for essential end-to-end tests.
+- Docker for deployment.
+
+Use mutually compatible stable versions.
+
+Use server-side API routes or Server Actions with a clearly separated service layer for business logic.
+
+Keep database access, validation, financial calculations, and authorization on the server.
+
+Use exact decimal arithmetic for monetary calculations. PostgreSQL NUMERIC/DECIMAL and Prisma Decimal or an equivalent precise decimal implementation must be used.
+
+Do not use JavaScript floating-point numbers as the authoritative representation of money.
+
+Organize the code into reusable modules and components.
+
+# 3. BILINGUAL INTERFACE: ENGLISH AND FRENCH
+
+The application must support two complete languages:
+
+- English (EN).
+- French (FR).
+
+Default language: English.
+
+Provide a language switcher in the application header or profile menu and in Settings.
+
+Translate the entire application, including:
+
+- Navigation.
+- Dashboard cards.
+- Charts and tooltips.
+- Tables.
+- Forms.
+- Buttons.
+- Filters.
+- Validation messages.
+- Notifications.
+- Empty states.
+- Authentication.
+- Income and expense pages.
+- Wallets.
+- Articles and categories.
+- Assets and liabilities.
+- Bank credits.
+- Personal loans.
+- Goals.
+- Analytics.
+- Settings.
+- Confirmation dialogs.
+- Error messages.
+
+Use organized translation files. Do not hardcode user-facing text inside application components.
+
+Changing the language must immediately update the visible interface without requiring a reload wherever practical.
+
+Persist the preferred language in PostgreSQL so it remains selected after logout, login, and application restart.
+
+Keep financial values unchanged when changing languages.
+
+Use locale-appropriate date, number, and currency formatting.
+
+Use English locale formatting for English and French locale formatting for French.
+
+All future features must follow the same translation system.
+
+# 4. DEFAULT CURRENCY AND TIMEZONE
+
+Default currency: MAD — Moroccan Dirham.
+
+Default timezone: Africa/Casablanca.
+
+All initial examples, financial forms, charts, calculations, and reports must use MAD.
+
+Display currency appropriately in each language, for example:
+
+English: MAD 25,000.00.
+
+French: 25 000,00 MAD.
+
+Use Intl.NumberFormat or an equivalent reliable formatting mechanism.
+
+The currency formatting layer must be separate from the underlying financial calculations.
+
+Do not automatically convert existing transaction values if the display currency changes.
+
+If multi-currency accounting is not fully implemented, explicitly support MAD only and do not pretend to perform currency conversion.
+
+Store financial dates consistently and prevent timezone shifts from changing transaction dates.
+
+Use a documented weekly convention for date filters.
+
+# 5. CUSTOMIZABLE APPLICATION NAME AND BRANDING
+
+Create a dedicated Settings section called:
+
+- English: Application Settings.
+- French: Paramètres de l'application.
+
+Provide an editable application name.
+
+Initial default name: Personal Finance Manager.
+
+The user must be able to change the name at any time.
+
+The saved name must automatically update:
+
+- Sidebar branding.
+- Login page.
+- Application header.
+- Browser tab title.
+- HTML document title.
+- Relevant page metadata.
+- Welcome messages.
+- PWA manifest name and short name if a PWA is implemented.
+
+Use a centralized settings service. Never hardcode the application name throughout the codebase.
+
+The change must take effect without rebuilding or redeploying the application.
+
+The name must persist in PostgreSQL.
+
+Validate the name on the server:
+- Trim leading and trailing whitespace.
+- Reject empty names.
+- Limit the name to 60 characters.
+- Handle special characters safely.
+
+Provide Save and Restore Default actions.
+
+Changing the application name must not change internal routes, database identifiers, or technical package names.
+
+# 6. AUTHENTICATION AND SECURITY
+
+This application is exclusively for one private user.
+
+Implement:
+
+- Secure login.
+- Initial administrator setup.
+- Secure password hashing.
+- Server-side session validation.
+- HTTP-only secure cookies in production.
+- Appropriate SameSite cookie settings.
+- CSRF protection where applicable.
+- Login rate limiting.
+- Input validation.
+- Server-side authorization on every protected operation.
+- Secure logout.
+- Password change.
+- Secure production secrets.
+
+Disable public registration.
+
+Do not expose a default administrator password.
+
+Provide a secure first-run administrator setup procedure that cannot be exploited by arbitrary public users.
+
+Use a SESSION_SECRET or equivalent production secret with at least 32 characters.
+
+Protect every private page and API route.
+
+Do not commit passwords, secrets, or database credentials to source control.
+
+Do not store sensitive financial records only in browser local storage.
+
+# 7. APPLICATION DESIGN
+
+Create a polished, modern financial SaaS-style interface.
+
+Design principles:
+
+- Professional fintech appearance.
+- Clean white or neutral content background.
+- Deep navy or charcoal navigation.
+- Green for income and positive progress.
+- Red for expenses and outstanding obligations.
+- Orange for warnings and intermediate progress.
+- Blue or purple for neutral categories.
+- Consistent typography and spacing.
+- Subtle transitions.
+- Responsive desktop, tablet, and mobile layouts.
+- Accessible controls and keyboard navigation.
+- Clear forms and confirmation dialogs.
+
+Implement:
+
+- Collapsible sidebar.
+- Responsive mobile navigation.
+- Header with current page title.
+- Language switcher.
+- Profile menu.
+- Global search.
+- Notifications.
+- Light and dark themes.
+- Toast notifications.
+- Loading skeletons.
+- Empty states.
+- Error states.
+- Pagination for large datasets.
+
+Use this navigation:
+
+1. Dashboard.
+2. Income.
+3. Expenses.
+4. Wallets & Banks.
+5. Articles.
+6. Categories.
+7. Assets & Liabilities.
+8. Bank Credits.
+9. Personal Loans.
+10. Goals.
+11. Analytics.
+12. Settings.
+
+Use consistent English and French translations for every navigation item.
+
+# 8. DASHBOARD
+
+Build a comprehensive dashboard with date filters:
+
+- Today.
+- This week.
+- This month.
+- This year.
+- Custom date range.
+- All time / Since the beginning.
+
+Clearly distinguish period-based statistics from current balances.
+
+## Main cards
+
+Display:
+
+- Total current wallet balance.
+- Income for selected period.
+- Expenses for selected period.
+- Net cash flow for selected period.
+- Total bank balance.
+- Total cash balance.
+- Outstanding bank debt.
+- Outstanding money lent to others.
+- Monthly savings rate where meaningful.
+- Goals progress.
+
+Bank debt and loans receivable must not be included in the available wallet balance.
+
+## Charts
+
+### Monthly income versus expenses
+
+Create a grouped bar chart with exactly two primary bars per month:
+
+- Green: Income.
+- Red: Expenses.
+
+Include:
+- Month labels.
+- Accurate monetary tooltips.
+- Selected year or date range.
+- Responsive layout.
+- Legend.
+- Empty-state handling.
+
+### Other charts
+
+Create:
+
+- Income trends.
+- Expense trends.
+- Expense distribution by category.
+- Income distribution by category.
+- Wallet balance distribution.
+- Net cash flow.
+- Goals completion.
+- Monthly savings rate where sufficient data exists.
+
+Respect category colors across all charts.
+
+## Additional dashboard widgets
+
+Display:
+
+- Recent transactions.
+- Highest expense categories.
+- Recent transfers.
+- Upcoming credit installments.
+- Budget usage.
+- Financial alerts.
+- Goals nearing completion.
+- Current wallet balances.
+
+All dashboard information must be calculated from actual database records.
+
+Do not display fabricated financial statistics.
+
+# 9. INCOME MANAGEMENT
+
+Create a fully functional Income page.
+
+Each income must include:
+
+- Unique ID.
+- Name.
+- Category.
+- Article.
+- Amount.
+- Destination wallet.
+- Financial date.
+- Optional comment.
+- Created timestamp.
+- Updated timestamp.
+
+The article is selected from a predefined article list.
+
+When an article is selected, automatically populate the default amount and any applicable default category.
+
+The user can override the suggested amount for the individual transaction.
+
+Changing an article's default amount must not alter existing income records.
+
+## Operations
+
+Implement:
+
+- Create.
+- View.
+- Edit.
+- Delete.
+- Search.
+- Sort.
+- Pagination.
+- Filter by period.
+- Filter by category.
+- Filter by article.
+- Filter by wallet.
+- CSV export.
+
+Creating an income credits the selected wallet.
+
+Editing the amount must apply only the difference between the old and new financial effects.
+
+Changing the wallet must reverse the previous wallet effect and apply the new one atomically.
+
+Deleting an income must reverse its financial effect.
+
+All changes must be transactional, validated, and traceable.
+
+# 10. EXPENSE MANAGEMENT
+
+Create a fully functional Expenses page.
+
+Each expense must include:
+
+- Unique ID.
+- Name.
+- Category.
+- Article.
+- Amount.
+- Source wallet.
+- Financial date.
+- Optional comment.
+- Created timestamp.
+- Updated timestamp.
+
+Selecting an article loads its default amount.
+
+The amount can be changed for the individual expense.
+
+Creating an expense debits the selected wallet.
+
+Editing the amount must apply the correct difference.
+
+Changing the wallet must reverse the old effect and apply the new effect atomically.
+
+Deleting an expense must reverse its wallet effect.
+
+Support:
+
+- Create, edit, view, and delete.
+- Search and sorting.
+- Period filters.
+- Category filters.
+- Article filters.
+- Wallet filters.
+- CSV export.
+- Expense summaries.
+- Category distribution.
+
+Prevent impermissible negative balances unless overdrafts are explicitly enabled for the wallet.
+
+# 11. CATEGORY MANAGEMENT
+
+Support separate income and expense categories.
+
+Each category must have:
+
+- Unique ID.
+- Name.
+- Type: income or expense.
+- Color.
+- Optional description.
+- Creation timestamp.
+
+Allow creating, editing, searching, and deleting categories.
+
+Category colors must appear in:
+
+- Transaction badges.
+- Dashboard cards.
+- Charts.
+- Analytics.
+- Filters.
+
+Prevent deletion of categories still referenced by historical transactions unless they are safely reassigned.
+
+Never silently destroy historical financial information.
+
+# 12. ARTICLES MANAGEMENT
+
+Create a separate Articles page.
+
+Examples of income articles:
+
+- Salary.
+- Overtime.
+- Freelance.
+- Refund received.
+- Online business income.
+
+Examples of expense articles:
+
+- Fuel.
+- Groceries.
+- Insurance.
+- Internet and phone.
+- Car installment.
+- Family expenses.
+
+Each article must have:
+
+- Unique ID.
+- Name.
+- Type: income or expense.
+- Description.
+- Default amount.
+- Optional default category.
+- Active/inactive status.
+- Created timestamp.
+- Updated timestamp.
+
+Implement full CRUD, search, sorting, and filtering.
+
+Selecting an article in a transaction form must load its suggested default amount.
+
+Archived articles must remain available for historical reporting.
+
+Changing or deleting an article must never silently modify historical transaction amounts.
+
+# 13. WALLETS AND BANK ACCOUNTS
+
+Create a complete Wallets & Banks page.
+
+Examples:
+
+- CIH bank account.
+- BMCI bank account.
+- Cash.
+- Savings account.
+- Other accounts.
+
+Each wallet must include:
+
+- Unique ID.
+- Name.
+- Type: bank, cash, savings, or other.
+- Color.
+- Description.
+- Initial balance.
+- Creation date.
+- Active/inactive status.
+- Optional overdraft permission.
+
+## Initial balance
+
+The initial balance is recorded at wallet creation.
+
+Do not allow users to edit it as an ordinary field afterward.
+
+If correction is needed, provide a dedicated audited correction workflow.
+
+## Balance calculation
+
+The authoritative current balance is:
+
+Current balance = Initial balance + Sum of all valid signed wallet ledger operations.
+
+Use precise decimal arithmetic.
+
+Do not independently modify balances in multiple places.
+
+If cached balances are introduced, update them transactionally and provide reconciliation tests.
+
+## Wallet cards
+
+Display each wallet's:
+
+- Name.
+- Color.
+- Current balance.
+- Account type.
+- Recent activity.
+
+Display combined wallet balance, bank subtotal, and cash subtotal.
+
+## Wallet history
+
+Every wallet must show a complete operation history containing:
+
+- Income.
+- Expense.
+- Transfer in.
+- Transfer out.
+- Cash withdrawal.
+- Manual adjustment.
+- Other supported operations.
+
+Each operation must show date, type, description, amount, direction, related wallet or transaction, and comment.
+
+Support date filtering, search, sorting, and export.
+
+# 14. TRANSFERS
+
+Implement atomic transfers between wallets.
+
+Each transfer must include:
+
+- Unique transfer ID.
+- Source wallet.
+- Destination wallet.
+- Amount.
+- Date.
+- Optional comment.
+
+A valid transfer creates two linked ledger entries:
+
+- Debit the source wallet.
+- Credit the destination wallet.
+
+Reject transfers when:
+
+- The source and destination are the same.
+- The amount is zero or negative.
+- The amount exceeds the available source balance without an authorized overdraft.
+- Any validation fails.
+
+Both ledger entries must be created or reversed in a single database transaction.
+
+Transfers must not count as consolidated income or expenses.
+
+The sum of all wallet balances must remain unchanged after an internal transfer.
+
+Prevent duplicate transfers when requests are retried.
+
+# 15. CASH WITHDRAWALS
+
+Support two distinct withdrawal types.
+
+### Type A: Withdrawal to external, untracked cash
+
+Debit the source bank wallet and record a withdrawal to an untracked destination.
+
+This is not automatically an expense.
+
+### Type B: Withdrawal to a tracked cash wallet
+
+Debit the source bank wallet and credit the destination cash wallet.
+
+The combined wallet balance remains unchanged.
+
+Both operations must be traceable in the wallet history.
+
+Never count a withdrawal as both a transfer and an expense.
+
+# 16. MANUAL WALLET ADJUSTMENTS
+
+Allow the user to reconcile a wallet against its real-world balance.
+
+The form must support:
+
+- Wallet.
+- Actual balance or adjustment amount.
+- Date.
+- Mandatory reason/comment.
+
+If the user enters an actual balance, calculate the required adjustment from the current system balance.
+
+Example:
+
+System balance: 900 MAD.
+
+Actual balance: 950 MAD.
+
+Adjustment: +50 MAD.
+
+New balance: 950 MAD.
+
+Record a dedicated ledger entry.
+
+Never silently overwrite the wallet balance.
+
+Adjustment entries must appear in the wallet history and analytics.
+
+Use concurrency control to avoid race conditions.
+
+# 17. ASSETS AND LIABILITIES — EXCEL-INSPIRED ALLOCATION SYSTEM
+
+Recreate the useful allocation logic from my first Excel screenshot.
+
+This module is an allocation and financial planning system. Do not assume that the terms Assets and Liabilities are being used according to formal accounting standards.
+
+Allow customization of allocation types and labels.
+
+## Summary cards
+
+Display:
+
+- Reference monthly income.
+- Total active allocations.
+- Total passive allocations.
+- Total allocated amount.
+- Remaining unallocated amount.
+- Allocation utilization percentage.
+- Available capacity.
+
+## Dynamic allocation visualization
+
+My Excel uses a table divided into units, for example:
+
+Reference income: 25,000 MAD.
+
+Unit value: 500 MAD.
+
+Total units: 50.
+
+A vehicle allocation of 2,000 MAD occupies the equivalent of four units.
+
+The application must implement the same concept without hardcoding the 500 MAD unit.
+
+Allow configuring:
+
+- Reference amount.
+- Unit value.
+- Allocation categories.
+- Colors.
+
+Calculate the visualization dynamically.
+
+Support fractional units or proportional bars when an amount is not an exact multiple of the unit value.
+
+Example:
+
+Reference amount: 25,000 MAD.
+
+Allocation: 2,000 MAD.
+
+Utilization: 8%.
+
+Remaining capacity: 23,000 MAD.
+
+## Allocation records
+
+Each allocation must include:
+
+- Unique ID.
+- Name.
+- Type: active or passive.
+- Classification: credit, monthly expense, completed, or other.
+- Amount.
+- Color.
+- Optional linked bank credit.
+- Optional linked transaction.
+- Status.
+- Optional comment.
+- Creation and update timestamps.
+
+Support CRUD, search, filtering, and sorting.
+
+## Credit-linked allocation
+
+When classification is Credit, allow selecting an existing bank credit.
+
+Display:
+
+- Original credit amount.
+- Amount repaid.
+- Outstanding amount.
+- Repayment percentage.
+- Monthly installment if configured.
+
+Derive repayment progress from validated credit repayment data.
+
+For other allocation types, allow manual progress when relevant.
+
+## Critical financial separation
+
+Allocations are planning records, not actual wallet transactions by default.
+
+Creating an allocation must not debit a wallet.
+
+Linking an allocation to an actual expense must not cause a second debit.
+
+Clearly distinguish planned amounts from actual expenses and available wallet balances.
+
+Persist all allocations in PostgreSQL.
+
+# 18. BANK CREDITS
+
+Create a separate Bank Credits page.
+
+Examples:
+
+- BMCI personal loan.
+- Changan vehicle financing.
+
+Each credit must contain:
+
+- Unique ID.
+- Credit name.
+- Lender.
+- Original principal.
+- Duration in months.
+- Start date.
+- Monthly installment.
+- Optional interest rate.
+- Optional fees.
+- Payment day.
+- Description.
+- Status.
+
+Calculate the expected end date from the start date and duration.
+
+Generate an installment schedule.
+
+If interest rates or contractual terms are unknown, do not pretend that a simplified schedule is contractually accurate. Support manual schedules.
+
+## Credit summary
+
+Display:
+
+- Original principal.
+- Total repaid.
+- Outstanding amount.
+- Paid installments.
+- Remaining installments.
+- Progress percentage.
+- Next due date.
+- Expected end date.
+
+Allow recording, editing, and reversal of repayment records.
+
+Each repayment must have a date, amount, comment, and optional wallet association.
+
+Bank credit tracking must remain separate from wallet accounting.
+
+If a repayment is linked to a wallet expense, prevent it from being counted twice in consolidated analytics.
+
+## Installment visualization
+
+Show one segment per installment.
+
+- Green: paid.
+- Red: remaining.
+- Orange: overdue.
+
+Change credit card color according to repayment progress:
+
+- Below 50%: red.
+- 50% to below 70%: orange.
+- 70% to below 90%: dark green.
+- 90% to 100%: green.
+
+Calculate progress from validated repayment data.
+
+Clearly distinguish estimated values from contractual values.
+
+# 19. PERSONAL LOANS GIVEN TO OTHER PEOPLE
+
+Create a separate Personal Loans page for money I lend to friends or family.
+
+Each loan must include:
+
+- Unique ID.
+- Borrower's name.
+- Description.
+- Original amount lent.
+- Loan date.
+- Optional expected repayment date.
+- Comment.
+- Status.
+
+Each loan must contain a history of operations.
+
+Supported operations:
+
+- Initial loan disbursement.
+- Partial repayment.
+- Additional disbursement.
+- Correction or reversal with a reason.
+
+Each operation must have:
+
+- Unique ID.
+- Type.
+- Amount.
+- Date.
+- Comment.
+- Optional wallet association.
+
+Example:
+
+Initial loan: 1,000 MAD.
+
+Repayment received: 300 MAD.
+
+Outstanding principal: 700 MAD.
+
+Repayment progress: 30%.
+
+Calculate the outstanding principal using all valid disbursements and repayments.
+
+Prevent repayments exceeding the outstanding amount unless using an explicit correction workflow.
+
+## Wallet separation
+
+Personal loan operations must not automatically modify wallet balances.
+
+Allow explicit linking to wallet operations.
+
+If linked, apply both records transactionally and ensure the financial effect occurs only once.
+
+Display:
+
+- Total lent.
+- Total repaid.
+- Outstanding amount.
+- Repayment percentage.
+- Borrower.
+- Operation history.
+
+Use repayment-progress card colors consistent with the bank credit module.
+
+# 20. YEARLY GOALS
+
+Create a complete Goals page inspired by my second Excel screenshot.
+
+Each goal must include:
+
+- Unique ID.
+- Year.
+- Category.
+- Title.
+- Description.
+- Priority.
+- Manual progress percentage.
+- Status.
+- Optional target date.
+- Optional required budget.
+- Optional saved budget.
+- Calculated remaining budget.
+- Optional note.
+
+## Goal categories
+
+Provide customizable categories such as:
+
+- Personal Development.
+- Family.
+- Personal Life.
+- Career.
+- Technical Training.
+- Online Business.
+- Travel.
+- Housing.
+- Savings.
+- Other.
+
+## Goal filters
+
+Allow filtering by:
+
+- Year.
+- Category.
+- Status.
+- Priority.
+- Progress.
+- Search.
+
+## Budget
+
+If a goal has a required budget:
+
+Remaining budget = Required budget - Saved budget.
+
+Budgets are optional.
+
+A negative remaining budget must be displayed correctly if savings exceed the target.
+
+Goal budgets must not modify wallet balances unless explicitly linked to actual transactions.
+
+## Goal statuses
+
+Support:
+
+- Not Started.
+- In Progress.
+- Completed.
+- On Hold.
+- Cancelled.
+
+Allow manual progress updates between 0% and 100%.
+
+A completed goal should normally have 100% progress.
+
+## Goal analytics
+
+Display:
+
+- Total goals per year.
+- Completed goals.
+- In-progress goals.
+- Overall progress.
+- Required budget.
+- Saved budget.
+- Remaining budget.
+- Category breakdown.
+- Year-over-year comparisons.
+
+Preserve goals across years.
+
+Support CSV export.
+
+# 21. ANALYTICS
+
+Create a dedicated Analytics page with separate sections for:
+
+- Income.
+- Expenses.
+- Wallets.
+- Cash withdrawals.
+- Transfers.
+- Net cash flow.
+- Assets and liabilities.
+- Bank credits.
+- Personal loans.
+- Goals.
+
+Provide filters for:
+
+- Today.
+- This week.
+- This month.
+- This year.
+- Custom range.
+- All time.
+
+Provide comparisons with previous equivalent periods where meaningful.
+
+## Income analytics
+
+Display:
+
+- Total income.
+- Income by category.
+- Income by article.
+- Income by wallet.
+- Monthly and yearly trends.
+- Average income.
+- Income source concentration.
+
+## Expense analytics
+
+Display:
+
+- Total expenses.
+- Expenses by category.
+- Expenses by article.
+- Expenses by wallet.
+- Largest expenses.
+- Monthly trends.
+- Average expense.
+- Savings rate.
+- Budget comparison.
+
+## Wallet analytics
+
+Display:
+
+- Current balance by wallet.
+- Bank versus cash balances.
+- Historical balance evolution.
+- Inflows and outflows.
+- Transfers.
+- Withdrawals.
+- Adjustments.
+- Reconciliation history.
+
+Historical balance charts must reconstruct balances from initial balances and dated ledger operations.
+
+Never use today's balance as every historical balance.
+
+## Cash-flow analytics
+
+Display:
+
+- Income.
+- Expenses.
+- Net cash flow.
+- Monthly comparisons.
+- Savings rate.
+
+Exclude internal transfers from consolidated income and expense totals.
+
+## Credit analytics
+
+Display:
+
+- Original debt.
+- Amount repaid.
+- Outstanding balance.
+- Repayment progress.
+- Upcoming installments.
+
+## Personal loan analytics
+
+Display:
+
+- Total money lent.
+- Total repayments.
+- Outstanding amount.
+- Repayment progress by borrower.
+
+## Goal analytics
+
+Display:
+
+- Progress by year.
+- Completion rate.
+- Budget progress.
+- Category comparison.
+
+Use real database data and correct aggregation logic for every chart.
+
+# 22. GLOBAL SEARCH, FILTERS, AND EXPORTS
+
+Implement:
+
+- Global search where appropriate.
+- Search by name, description, comment, and identifiers.
+- Filters by date, wallet, category, article, status, and amount.
+- Sorting.
+- Pagination.
+- Clear-all-filters controls.
+- CSV exports for all relevant modules.
+
+Exports must respect active filters.
+
+Protect CSV exports against formula injection.
+
+Use the selected language for headings and date formatting where practical.
+
+Financial amounts must remain numerically correct in exports.
+
+# 23. DATABASE AND FINANCIAL LEDGER
+
+Design a normalized PostgreSQL database with appropriate foreign keys, constraints, and indexes.
+
+Include at least:
+
+- User.
+- Session or equivalent authentication records.
+- Wallet.
+- Wallet ledger entry.
+- Wallet transfer.
+- Income transaction.
+- Expense transaction.
+- Category.
+- Article.
+- Asset/liability allocation.
+- Bank credit.
+- Credit installment.
+- Credit repayment.
+- Personal loan.
+- Personal loan operation.
+- Goal.
+- Goal category.
+- Application settings.
+- Audit log.
+
+Add additional tables where needed.
+
+## Ledger integrity
+
+Use the initial wallet balance and validated ledger entries as the authoritative source of wallet balances.
+
+Avoid multiple independent balance fields that can drift out of sync.
+
+If cached balances are used, update them in the same database transaction and provide reconciliation checks.
+
+Editing an income or expense must correct its ledger effect exactly once.
+
+Deleting or reversing an operation must never reverse it twice.
+
+Transfers must contain linked debit and credit entries.
+
+Concurrent operations must be protected by appropriate database transactions, locking, or equivalent concurrency controls.
+
+Use idempotency keys where appropriate to prevent duplicate financial mutations on retries.
+
+Use soft deletion or reversal entries where required for auditability.
+
+Never silently delete financial history.
+
+Keep allocation planning, bank credit tracking, and personal loan tracking separate from wallet ledger calculations unless explicitly linked.
+
+## Audit trail
+
+Record important changes:
+
+- Timestamp.
+- Entity type and ID.
+- Operation type.
+- Previous and new values where appropriate.
+- Reason for manual correction.
+- Related transaction reference.
+
+Never record passwords or authentication secrets.
+
+# 24. SETTINGS
+
+Create a complete Settings page divided into sections.
+
+## General settings
+
+- Application name.
+- Default language.
+- Currency.
+- Timezone.
+- Date and number formatting.
+
+## Appearance
+
+- Light theme.
+- Dark theme.
+- Sidebar preferences if supported.
+
+## Financial configuration
+
+- Reference monthly income.
+- Allocation unit value.
+- Default overdraft preferences.
+- Other financial defaults.
+
+## Security
+
+- Change password.
+- Session information where appropriate.
+
+## Data management
+
+- CSV exports.
+- Backup instructions.
+- Restore documentation.
+- Data portability.
+
+Persist settings in PostgreSQL.
+
+Use sensible defaults when the settings record does not exist.
+
+Changing application name, language, theme, or formatting must not affect financial calculations.
+
+# 25. BACKUPS AND DATA PORTABILITY
+
+Provide:
+
+- PostgreSQL backup instructions.
+- PostgreSQL restore instructions.
+- Database migration documentation.
+- CSV exports.
+- A complete backup strategy.
+- A procedure to verify backup integrity.
+- A documented restore test.
+
+Do not store financial records only in the application container.
+
+Never automatically delete data during redeployment.
+
+Never perform destructive migrations without a safe migration plan.
+
+Persistent database storage must survive application restarts and Coolify redeployments.
+
+# 26. COOLIFY AND VPS DEPLOYMENT
+
+The application must be deployable on my existing Ubuntu VPS through Coolify.
+
+Prepare:
+
+- Production Dockerfile.
+- Docker Compose file for local development where useful.
+- PostgreSQL deployment instructions.
+- Database migrations.
+- `.env.example`.
+- Environment variable documentation.
+- Health-check endpoint.
+- Production build instructions.
+- Persistent storage configuration.
+- Internal networking.
+- HTTPS configuration guidance.
+- Backup and restoration procedures.
+- Update and rollback instructions.
+- Complete README in English or French, preferably French.
+
+Required environment variables should include:
+
+- DATABASE_URL.
+- SESSION_SECRET.
+- APP_URL.
+- Initial administrator setup configuration if needed.
+
+Add other variables only when required.
+
+Never include real secrets in the repository.
+
+Never expose PostgreSQL publicly.
+
+Do not hardcode public ports that conflict with Coolify's reverse proxy.
+
+Use Coolify environment variables for production configuration.
+
+Allow deployment under a configurable domain, for example:
+
+finance.bibaouane.com
+
+Do not change or disrupt unrelated applications or services running on my VPS.
+
+Document precisely what I must configure in Coolify.
+
+Ensure that the production application works correctly behind HTTPS and a reverse proxy.
+
+# 27. AUTOMATED TESTS — MANDATORY FINANCIAL SCENARIOS
+
+Write automated tests for every critical financial rule.
+
+### Test A: Create income
+
+Initial balance: 1,000 MAD.
+
+Income: 500 MAD.
+
+Expected balance: 1,500 MAD.
+
+### Test B: Edit income
+
+Change income from 500 MAD to 700 MAD.
+
+Expected balance: 1,700 MAD, not 2,200 MAD.
+
+### Test C: Delete income
+
+Delete the 700 MAD income.
+
+Expected balance: 1,000 MAD.
+
+### Test D: Create expense
+
+Initial balance: 1,000 MAD.
+
+Expense: 200 MAD.
+
+Expected balance: 800 MAD.
+
+### Test E: Edit expense
+
+Change expense from 200 MAD to 300 MAD.
+
+Expected balance: 700 MAD.
+
+### Test F: Delete expense
+
+Delete the 300 MAD expense.
+
+Expected balance: 1,000 MAD.
+
+### Test G: Transfer
+
+Source: 2,000 MAD.
+
+Destination: 500 MAD.
+
+Transfer: 800 MAD.
+
+Expected source: 1,200 MAD.
+
+Expected destination: 1,300 MAD.
+
+Expected combined balance: 2,500 MAD.
+
+### Test H: Invalid transfer
+
+Source: 300 MAD.
+
+Attempted transfer: 500 MAD.
+
+Expected: rejected and both balances unchanged.
+
+### Test I: Tracked cash withdrawal
+
+Bank: 2,000 MAD.
+
+Cash: 100 MAD.
+
+Withdrawal: 500 MAD.
+
+Expected bank: 1,500 MAD.
+
+Expected cash: 600 MAD.
+
+Expected combined balance: 2,100 MAD.
+
+### Test J: Adjustment
+
+System balance: 900 MAD.
+
+Actual balance: 950 MAD.
+
+Adjustment: +50 MAD.
+
+Expected balance: 950 MAD.
+
+### Test K: Personal loan
+
+Amount lent: 1,000 MAD.
+
+Repayment: 300 MAD.
+
+Expected outstanding: 700 MAD.
+
+Expected progress: 30%.
+
+### Test L: Goal budget
+
+Required: 10,000 MAD.
+
+Saved: 4,000 MAD.
+
+Expected remaining budget: 6,000 MAD.
+
+### Test M: Concurrent withdrawals
+
+Attempt simultaneous withdrawals that together exceed the available balance.
+
+Expected: the application prevents an impermissible negative balance.
+
+### Test N: Duplicate requests
+
+Retry a financial mutation.
+
+Expected: no duplicate financial effect.
+
+### Test O: Historical balances
+
+Create transactions on different dates.
+
+Expected: historical reports reconstruct the correct balance at each date.
+
+### Test P: Credit repayment
+
+Record a repayment and a linked wallet expense.
+
+Expected: repayment progress updates correctly and the wallet expense is counted only once.
+
+### Test Q: Language switching
+
+Switch between English and French.
+
+Expected: all major pages and messages use the selected language, and the setting persists.
+
+### Test R: Currency formatting
+
+Display the same amount in English and French.
+
+Expected: locale-specific formatting changes without changing the actual value.
+
+### Test S: Application branding
+
+Change the application name.
+
+Expected: sidebar, login page, header, and browser title display the new name without redeployment.
+
+### Test T: Persistence
+
+Restart or redeploy the application.
+
+Expected: financial records, application name, language preference, and settings remain available.
+
+### Test U: Category deletion
+
+Attempt to delete a category referenced by historical transactions.
+
+Expected: the application prevents data corruption or uses a safe reassignment/archive workflow.
+
+Run the tests and fix all failures before declaring completion.
+
+# 28. IMPLEMENTATION WORKFLOW
+
+Build the real application in these stages.
+
+Stage 1: Inspect the available development environment and initialize the project.
+
+Stage 2: Implement database schema, migrations, settings, and financial ledger architecture.
+
+Stage 3: Implement authentication and server-side authorization.
+
+Stage 4: Implement wallets, ledger entries, transfers, withdrawals, and adjustments.
+
+Stage 5: Implement income, expenses, categories, and articles.
+
+Stage 6: Implement assets/liabilities allocations, bank credits, and personal loans.
+
+Stage 7: Implement yearly goals.
+
+Stage 8: Implement dashboard, analytics, global search, filters, and exports.
+
+Stage 9: Implement bilingual English/French support, MAD formatting, and dynamic application branding.
+
+Stage 10: Implement tests, Docker, and Coolify deployment documentation.
+
+Keep the project runnable after each major stage.
+
+Do not prioritize decorative UI over financial correctness.
+
+Do not stop after generating a plan, screenshots, a wireframe, or static mockup.
+
+If execution limits prevent finishing everything in one session, complete a working foundation first and clearly identify the remaining implementation work.
+
+# 29. FINAL ACCEPTANCE CRITERIA
+
+The application is accepted only when:
+
+- All required pages are functional.
+- All CRUD operations work with PostgreSQL.
+- The UI supports complete English and French translations.
+- English is the initial language.
+- MAD is the default currency.
+- Africa/Casablanca is the default timezone.
+- The application name is customizable in Settings.
+- The application name changes throughout the interface without redeployment.
+- Wallet balances remain correct after all supported operations.
+- Transfers do not count as income or expenses.
+- Bank credits and personal loans remain separate from wallets unless explicitly linked.
+- Financial operations cannot be double-counted.
+- Historical analytics reconstruct correct balances.
+- Category colors are consistent.
+- Goal data and allocation data persist.
+- Authentication protects private functionality.
+- Data survives restarts and redeployments.
+- Automated financial integrity tests pass.
+- Docker builds successfully.
+- Coolify deployment instructions are complete.
+- Backup and restore procedures are documented.
+- All unfinished features and limitations are explicitly disclosed.
+
+# 30. START EXECUTION NOW
+
+Start by inspecting your actual execution environment and available tools.
+
+Then create the project and implement the application.
+
+Analyze the two provided Excel screenshots as functional references.
+
+Generate real source code, real database schema and migrations, working forms, functional backend operations, charts based on real data, tests, and deployment files.
+
+Do not merely explain how I could build it.
+
+Do not stop after creating a visual prototype.
+
+Do not claim that tests passed unless you actually executed them.
+
+Do not claim deployment is successful unless it was actually performed and verified.
+
+At the end, provide:
+1. A summary of what was built.
+2. The project structure.
+3. Test results.
+4. Any remaining limitations.
+5. Exact step-by-step instructions to deploy the application using Coolify on my VPS.

@@ -1,0 +1,1601 @@
+     1→'use client'
+     2→
+     3→import { useMemo, useState, useEffect } from 'react'
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→import { toast } from 'sonner'
+     6→import {
+     7→  Plus,
+     8→  Download,
+     9→  MoreHorizontal,
+    10→  Eye,
+    11→  Pencil,
+    12→  Trash2,
+    13→  ArrowRightLeft,
+    14→  Banknote,
+    15→  Scale,
+    16→  Wallet as WalletIcon,
+    17→  PiggyBank,
+    18→  Landmark,
+    19→  HelpCircle,
+    20→  History as HistoryIcon,
+    21→  Search,
+    22→} from 'lucide-react'
+    23→
+    24→import { useI18n } from '@/lib/use-i18n'
+    25→import { useApi } from '@/lib/use-api'
+    26→import { toCents, fromCents, toLocalDateString } from '@/lib/money'
+    27→import { cn } from '@/lib/utils'
+    28→
+    29→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    30→import { Button } from '@/components/ui/button'
+    31→import { Input } from '@/components/ui/input'
+    32→import { Label } from '@/components/ui/label'
+    33→import { Textarea } from '@/components/ui/textarea'
+    34→import { Badge } from '@/components/ui/badge'
+    35→import { Skeleton } from '@/components/ui/skeleton'
+    36→import { Switch } from '@/components/ui/switch'
+    37→import { ScrollArea } from '@/components/ui/scroll-area'
+    38→import {
+    39→  Select,
+    40→  SelectContent,
+    41→  SelectItem,
+    42→  SelectTrigger,
+    43→  SelectValue,
+    44→} from '@/components/ui/select'
+    45→import {
+    46→  Dialog,
+    47→  DialogContent,
+    48→  DialogDescription,
+    49→  DialogFooter,
+    50→  DialogHeader,
+    51→  DialogTitle,
+    52→} from '@/components/ui/dialog'
+    53→import {
+    54→  Table,
+    55→  TableBody,
+    56→  TableCell,
+    57→  TableHead,
+    58→  TableHeader,
+    59→  TableRow,
+    60→} from '@/components/ui/table'
+    61→import {
+    62→  DropdownMenu,
+    63→  DropdownMenuContent,
+    64→  DropdownMenuItem,
+    65→  DropdownMenuSeparator,
+    66→  DropdownMenuTrigger,
+    67→} from '@/components/ui/dropdown-menu'
+    68→import {
+    69→  Pagination,
+    70→  PaginationContent,
+    71→  PaginationItem,
+    72→  PaginationLink,
+    73→  PaginationNext,
+    74→  PaginationPrevious,
+    75→  PaginationEllipsis,
+    76→} from '@/components/ui/pagination'
+    77→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+    78→import { EmptyState, PageHeader, MoneyText } from '@/components/shared'
+    79→import { ConfirmDialog } from '@/components/confirm-dialog'
+    80→
+    81→// ---------------------------------------------------------------------------
+    82→// Types
+    83→// ---------------------------------------------------------------------------
+    84→
+    85→type WalletType = 'bank' | 'cash' | 'savings' | 'other'
+    86→
+    87→interface Wallet {
+    88→  id: string
+    89→  name: string
+    90→  type: WalletType
+    91→  color: string | null
+    92→  description: string | null
+    93→  initialBalance: string
+    94→  balance: string
+    95→  currentBalance?: string
+    96→  allowOverdraft: boolean
+    97→  active: boolean
+    98→  createdAt: string
+    99→}
+   100→
+   101→interface WalletsListResponse {
+   102→  wallets: Wallet[]
+   103→  combined: string
+   104→  bankSubtotal: string
+   105→  cashSubtotal: string
+   106→  savingsSubtotal: string
+   107→  otherSubtotal: string
+   108→}
+   109→
+   110→interface WalletDetailResponse extends Wallet {
+   111→  recentEntries?: unknown[]
+   112→}
+   113→
+   114→interface LedgerEntry {
+   115→  id: string
+   116→  walletId: string
+   117→  amount: string
+   118→  operationType: string
+   119→  direction: 'credit' | 'debit'
+   120→  financialDate: string
+   121→  comment: string | null
+   122→  createdAt: string
+   123→}
+   124→
+   125→interface HistoryResponse {
+   126→  items: LedgerEntry[]
+   127→  total: number
+   128→  page: number
+   129→  pageSize: number
+   130→}
+   131→
+   132→// ---------------------------------------------------------------------------
+   133→// Constants & helpers
+   134→// ---------------------------------------------------------------------------
+   135→
+   136→const WALLET_TYPES: WalletType[] = ['bank', 'cash', 'savings', 'other']
+   137→const HISTORY_PAGE_SIZE = 10
+   138→const DEFAULT_COLOR = '#2563eb'
+   139→
+   140→function todayLocal(): string {
+   141→  return toLocalDateString(new Date())
+   142→}
+   143→
+   144→function walletBalance(w: Wallet): string {
+   145→  return w.currentBalance ?? w.balance
+   146→}
+   147→
+   148→function clampPage(p: number, totalPages: number): number {
+   149→  if (p < 1) return 1
+   150→  if (p > totalPages) return totalPages
+   151→  return p
+   152→}
+   153→
+   154→function buildPageList(current: number, totalPages: number): (number | 'ellipsis')[] {
+   155→  if (totalPages <= 7) {
+   156→    return Array.from({ length: totalPages }, (_, i) => i + 1)
+   157→  }
+   158→  const pages: (number | 'ellipsis')[] = [1]
+   159→  const left = Math.max(2, current - 1)
+   160→  const right = Math.min(totalPages - 1, current + 1)
+   161→  if (left > 2) pages.push('ellipsis')
+   162→  for (let i = left; i <= right; i++) pages.push(i)
+   163→  if (right < totalPages - 1) pages.push('ellipsis')
+   164→  pages.push(totalPages)
+   165→  return pages
+   166→}
+   167→
+   168→const TYPE_ICON: Record<WalletType, typeof WalletIcon> = {
+   169→  bank: Landmark,
+   170→  cash: WalletIcon,
+   171→  savings: PiggyBank,
+   172→  other: HelpCircle,
+   173→}
+   174→
+   175→// ---------------------------------------------------------------------------
+   176→// Component
+   177→// ---------------------------------------------------------------------------
+   178→
+   179→export function WalletsView() {
+   180→  const { t, money, date } = useI18n()
+   181→  const api = useApi()
+   182→  const qc = useQueryClient()
+   183→
+   184→  // ---- Wallets list ----
+   185→  const walletsQuery = useQuery<WalletsListResponse>({
+   186→    queryKey: ['wallets'],
+   187→    queryFn: () => api.get<WalletsListResponse>('/api/wallets'),
+   188→  })
+   189→
+   190→  const wallets = walletsQuery.data?.wallets ?? []
+   191→  const combined = walletsQuery.data?.combined ?? '0.00'
+   192→  const bankSubtotal = walletsQuery.data?.bankSubtotal ?? '0.00'
+   193→  const cashSubtotal = walletsQuery.data?.cashSubtotal ?? '0.00'
+   194→  const loading = walletsQuery.isLoading
+   195→
+   196→  // ---- Wallet create / edit dialog ----
+   197→  const [walletDialogOpen, setWalletDialogOpen] = useState(false)
+   198→  const [editing, setEditing] = useState<Wallet | null>(null)
+   199→  const [submittingWallet, setSubmittingWallet] = useState(false)
+   200→
+   201→  const [formName, setFormName] = useState('')
+   202→  const [formType, setFormType] = useState<WalletType>('bank')
+   203→  const [formColor, setFormColor] = useState(DEFAULT_COLOR)
+   204→  const [formDescription, setFormDescription] = useState('')
+   205→  const [formInitialBalance, setFormInitialBalance] = useState('0')
+   206→  const [formAllowOverdraft, setFormAllowOverdraft] = useState(false)
+   207→  const [formActive, setFormActive] = useState(true)
+   208→
+   209→  // ---- Transfer dialog ----
+   210→  const [transferOpen, setTransferOpen] = useState(false)
+   211→  const [transferSource, setTransferSource] = useState('')
+   212→  const [transferDest, setTransferDest] = useState('')
+   213→  const [transferAmount, setTransferAmount] = useState('')
+   214→  const [transferDate, setTransferDate] = useState(todayLocal())
+   215→  const [transferComment, setTransferComment] = useState('')
+   216→  const [submittingTransfer, setSubmittingTransfer] = useState(false)
+   217→
+   218→  // ---- Withdraw dialog ----
+   219→  const [withdrawOpen, setWithdrawOpen] = useState(false)
+   220→  const [withdrawType, setWithdrawType] = useState<'external' | 'internal'>('external')
+   221→  const [withdrawSource, setWithdrawSource] = useState('')
+   222→  const [withdrawDest, setWithdrawDest] = useState('')
+   223→  const [withdrawAmount, setWithdrawAmount] = useState('')
+   224→  const [withdrawDate, setWithdrawDate] = useState(todayLocal())
+   225→  const [withdrawComment, setWithdrawComment] = useState('')
+   226→  const [submittingWithdraw, setSubmittingWithdraw] = useState(false)
+   227→
+   228→  // ---- Adjust dialog ----
+   229→  const [adjustOpen, setAdjustOpen] = useState(false)
+   230→  const [adjustWallet, setAdjustWallet] = useState<Wallet | null>(null)
+   231→  const [adjustMode, setAdjustMode] = useState<'actual' | 'adjustment'>('actual')
+   232→  const [adjustActual, setAdjustActual] = useState('')
+   233→  const [adjustAdjustment, setAdjustAdjustment] = useState('')
+   234→  const [adjustDate, setAdjustDate] = useState(todayLocal())
+   235→  const [adjustReason, setAdjustReason] = useState('')
+   236→  const [submittingAdjust, setSubmittingAdjust] = useState(false)
+   237→
+   238→  const adjustDetailQuery = useQuery<WalletDetailResponse>({
+   239→    queryKey: ['wallet', adjustWallet?.id],
+   240→    queryFn: () => api.get<WalletDetailResponse>(`/api/wallets/${adjustWallet!.id}`),
+   241→    enabled: !!adjustWallet && adjustOpen,
+   242→  })
+   243→
+   244→  // ---- History dialog ----
+   245→  const [historyOpen, setHistoryOpen] = useState(false)
+   246→  const [historyWallet, setHistoryWallet] = useState<Wallet | null>(null)
+   247→  const [historyPage, setHistoryPage] = useState(1)
+   248→  const [historyFrom, setHistoryFrom] = useState('')
+   249→  const [historyTo, setHistoryTo] = useState('')
+   250→  const [historySearch, setHistorySearch] = useState('')
+   251→
+   252→  const historyParams = useMemo(
+   253→    () => ({
+   254→      from: historyFrom || undefined,
+   255→      to: historyTo || undefined,
+   256→      search: historySearch.trim() || undefined,
+   257→      page: historyPage,
+   258→      pageSize: HISTORY_PAGE_SIZE,
+   259→    }),
+   260→    [historyFrom, historyTo, historySearch, historyPage],
+   261→  )
+   262→
+   263→  const historyQuery = useQuery<HistoryResponse>({
+   264→    queryKey: ['wallet', historyWallet?.id, 'history', historyParams],
+   265→    queryFn: () =>
+   266→      api.get<HistoryResponse>(`/api/wallets/${historyWallet!.id}/history`, {
+   267→        query: historyParams,
+   268→      }),
+   269→    enabled: !!historyWallet && historyOpen,
+   270→  })
+   271→
+   272→  // ---- Delete ----
+   273→  const [deleteTarget, setDeleteTarget] = useState<Wallet | null>(null)
+   274→
+   275→  // ---------------------------------------------------------------------------
+   276→  // Mutations
+   277→  // ---------------------------------------------------------------------------
+   278→
+   279→  const createMutation = useMutation({
+   280→    mutationFn: (body: Record<string, unknown>) => api.post('/api/wallets', body),
+   281→    onSuccess: () => {
+   282→      toast.success(t('wal.created'))
+   283→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   284→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   285→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   286→      setWalletDialogOpen(false)
+   287→    },
+   288→  })
+   289→
+   290→  const updateMutation = useMutation({
+   291→    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+   292→      api.put(`/api/wallets/${id}`, body),
+   293→    onSuccess: () => {
+   294→      toast.success(t('wal.updated'))
+   295→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   296→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   297→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   298→      setWalletDialogOpen(false)
+   299→    },
+   300→  })
+   301→
+   302→  const deleteMutation = useMutation({
+   303→    mutationFn: (id: string) => api.del(`/api/wallets/${id}`),
+   304→    onSuccess: () => {
+   305→      toast.success(t('common.delete'))
+   306→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   307→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   308→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   309→      setDeleteTarget(null)
+   310→    },
+   311→  })
+   312→
+   313→  const transferMutation = useMutation({
+   314→    mutationFn: (body: Record<string, unknown>) => api.post('/api/transfers', body),
+   315→    onSuccess: () => {
+   316→      toast.success(t('transfer.created'))
+   317→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   318→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   319→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   320→      setTransferOpen(false)
+   321→    },
+   322→  })
+   323→
+   324→  const withdrawMutation = useMutation({
+   325→    mutationFn: (body: Record<string, unknown>) => api.post('/api/withdrawals', body),
+   326→    onSuccess: () => {
+   327→      toast.success(t('withdraw.created'))
+   328→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   329→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   330→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   331→      setWithdrawOpen(false)
+   332→    },
+   333→  })
+   334→
+   335→  const adjustMutation = useMutation({
+   336→    mutationFn: (body: Record<string, unknown>) => api.post('/api/adjustments', body),
+   337→    onSuccess: () => {
+   338→      toast.success(t('adjust.created'))
+   339→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   340→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   341→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   342→      setAdjustOpen(false)
+   343→    },
+   344→  })
+   345→
+   346→  // ---------------------------------------------------------------------------
+   347→  // Effects
+   348→  // ---------------------------------------------------------------------------
+   349→
+   350→  // Reset history pagination when filters change
+   351→  useEffect(() => {
+   352→    setHistoryPage(1)
+   353→  }, [historyFrom, historyTo, historySearch, historyWallet?.id])
+   354→
+   355→  // Auto-clamp history page if drifted past last page
+   356→  const historyTotal = historyQuery.data?.total ?? 0
+   357→  const historyTotalPages = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE))
+   358→  useEffect(() => {
+   359→    if (historyTotal > 0 && historyPage > historyTotalPages) {
+   360→      setHistoryPage(historyTotalPages)
+   361→    }
+   362→  }, [historyTotal, historyTotalPages, historyPage])
+   363→
+   364→  // ---------------------------------------------------------------------------
+   365→  // Handlers
+   366→  // ---------------------------------------------------------------------------
+   367→
+   368→  const openCreate = () => {
+   369→    setEditing(null)
+   370→    setFormName('')
+   371→    setFormType('bank')
+   372→    setFormColor(DEFAULT_COLOR)
+   373→    setFormDescription('')
+   374→    setFormInitialBalance('0')
+   375→    setFormAllowOverdraft(false)
+   376→    setFormActive(true)
+   377→    setWalletDialogOpen(true)
+   378→  }
+   379→
+   380→  const openEdit = (w: Wallet) => {
+   381→    setEditing(w)
+   382→    setFormName(w.name)
+   383→    setFormType(w.type)
+   384→    setFormColor(w.color ?? DEFAULT_COLOR)
+   385→    setFormDescription(w.description ?? '')
+   386→    setFormInitialBalance(w.initialBalance)
+   387→    setFormAllowOverdraft(w.allowOverdraft)
+   388→    setFormActive(w.active)
+   389→    setWalletDialogOpen(true)
+   390→  }
+   391→
+   392→  const handleWalletSubmit = async () => {
+   393→    if (!formName.trim()) {
+   394→      toast.error(`${t('common.required')}: ${t('common.name')}`)
+   395→      return
+   396→    }
+   397→    const body: Record<string, unknown> = {
+   398→      name: formName.trim(),
+   399→      type: formType,
+   400→      color: formColor,
+   401→      allowOverdraft: formAllowOverdraft,
+   402→      active: formActive,
+   403→    }
+   404→    if (formDescription.trim()) body.description = formDescription.trim()
+   405→
+   406→    setSubmittingWallet(true)
+   407→    try {
+   408→      if (editing) {
+   409→        await updateMutation.mutateAsync({ id: editing.id, body })
+   410→      } else {
+   411→        const initBal = Number(formInitialBalance)
+   412→        if (!Number.isFinite(initBal)) {
+   413→          toast.error(`${t('common.required')}: ${t('wal.initialBalance')}`)
+   414→          return
+   415→        }
+   416→        body.initialBalance = initBal.toFixed(2)
+   417→        await createMutation.mutateAsync(body)
+   418→      }
+   419→    } catch {
+   420→      // useApi already toasted the error.
+   421→    } finally {
+   422→      setSubmittingWallet(false)
+   423→    }
+   424→  }
+   425→
+   426→  const openTransfer = (w: Wallet) => {
+   427→    setTransferSource(w.id)
+   428→    setTransferDest('')
+   429→    setTransferAmount('')
+   430→    setTransferDate(todayLocal())
+   431→    setTransferComment('')
+   432→    setTransferOpen(true)
+   433→  }
+   434→
+   435→  const handleTransferSubmit = async () => {
+   436→    if (!transferSource) {
+   437→      toast.error(`${t('common.required')}: ${t('transfer.source')}`)
+   438→      return
+   439→    }
+   440→    if (!transferDest) {
+   441→      toast.error(`${t('common.required')}: ${t('transfer.destination')}`)
+   442→      return
+   443→    }
+   444→    if (transferSource === transferDest) {
+   445→      toast.error(t('transfer.sameWallet'))
+   446→      return
+   447→    }
+   448→    const amt = Number(transferAmount)
+   449→    if (!Number.isFinite(amt) || amt <= 0) {
+   450→      toast.error(t('transfer.invalidAmount'))
+   451→      return
+   452→    }
+   453→    if (!transferDate) {
+   454→      toast.error(`${t('common.required')}: ${t('common.date')}`)
+   455→      return
+   456→    }
+   457→    const body: Record<string, unknown> = {
+   458→      sourceWalletId: transferSource,
+   459→      destWalletId: transferDest,
+   460→      amount: amt.toFixed(2),
+   461→      financialDate: transferDate,
+   462→    }
+   463→    if (transferComment.trim()) body.comment = transferComment.trim()
+   464→    setSubmittingTransfer(true)
+   465→    try {
+   466→      await transferMutation.mutateAsync(body)
+   467→    } catch {
+   468→      // useApi already toasted the error.
+   469→    } finally {
+   470→      setSubmittingTransfer(false)
+   471→    }
+   472→  }
+   473→
+   474→  const openWithdraw = (w: Wallet) => {
+   475→    setWithdrawSource(w.id)
+   476→    setWithdrawType('external')
+   477→    setWithdrawDest('')
+   478→    setWithdrawAmount('')
+   479→    setWithdrawDate(todayLocal())
+   480→    setWithdrawComment('')
+   481→    setWithdrawOpen(true)
+   482→  }
+   483→
+   484→  const handleWithdrawSubmit = async () => {
+   485→    if (!withdrawSource) {
+   486→      toast.error(`${t('common.required')}: ${t('transfer.source')}`)
+   487→      return
+   488→    }
+   489→    if (withdrawType === 'internal') {
+   490→      if (!withdrawDest) {
+   491→        toast.error(`${t('common.required')}: ${t('withdraw.destination')}`)
+   492→        return
+   493→      }
+   494→      if (withdrawSource === withdrawDest) {
+   495→        toast.error(t('transfer.sameWallet'))
+   496→        return
+   497→      }
+   498→    }
+   499→    const amt = Number(withdrawAmount)
+   500→    if (!Number.isFinite(amt) || amt <= 0) {
+   501→      toast.error(t('transfer.invalidAmount'))
+   502→      return
+   503→    }
+   504→    if (!withdrawDate) {
+   505→      toast.error(`${t('common.required')}: ${t('common.date')}`)
+   506→      return
+   507→    }
+   508→    const body: Record<string, unknown> = {
+   509→      sourceWalletId: withdrawSource,
+   510→      withdrawalType: withdrawType,
+   511→      amount: amt.toFixed(2),
+   512→      financialDate: withdrawDate,
+   513→    }
+   514→    if (withdrawType === 'internal') body.destWalletId = withdrawDest
+   515→    if (withdrawComment.trim()) body.comment = withdrawComment.trim()
+   516→    setSubmittingWithdraw(true)
+   517→    try {
+   518→      await withdrawMutation.mutateAsync(body)
+   519→    } catch {
+   520→      // useApi already toasted the error.
+   521→    } finally {
+   522→      setSubmittingWithdraw(false)
+   523→    }
+   524→  }
+   525→
+   526→  const openAdjust = (w: Wallet) => {
+   527→    setAdjustWallet(w)
+   528→    setAdjustMode('actual')
+   529→    setAdjustActual('')
+   530→    setAdjustAdjustment('')
+   531→    setAdjustDate(todayLocal())
+   532→    setAdjustReason('')
+   533→    setAdjustOpen(true)
+   534→  }
+   535→
+   536→  const handleAdjustSubmit = async () => {
+   537→    if (!adjustWallet) return
+   538→    if (!adjustDate) {
+   539→      toast.error(`${t('common.required')}: ${t('common.date')}`)
+   540→      return
+   541→    }
+   542→    if (!adjustReason.trim() || adjustReason.trim().length < 3) {
+   543→      toast.error(t('adjust.reasonRequired'))
+   544→      return
+   545→    }
+   546→    const body: Record<string, unknown> = {
+   547→      walletId: adjustWallet.id,
+   548→      financialDate: adjustDate,
+   549→      reason: adjustReason.trim(),
+   550→    }
+   551→    if (adjustMode === 'actual') {
+   552→      const actual = Number(adjustActual)
+   553→      if (!Number.isFinite(actual)) {
+   554→        toast.error(`${t('common.required')}: ${t('adjust.actualBalance')}`)
+   555→        return
+   556→      }
+   557→      body.actualBalance = actual.toFixed(2)
+   558→    } else {
+   559→      const adj = Number(adjustAdjustment)
+   560→      if (!Number.isFinite(adj)) {
+   561→        toast.error(`${t('common.required')}: ${t('adjust.adjustment')}`)
+   562→        return
+   563→      }
+   564→      body.adjustment = adj.toFixed(2)
+   565→    }
+   566→    setSubmittingAdjust(true)
+   567→    try {
+   568→      await adjustMutation.mutateAsync(body)
+   569→    } catch {
+   570→      // useApi already toasted the error.
+   571→    } finally {
+   572→      setSubmittingAdjust(false)
+   573→    }
+   574→  }
+   575→
+   576→  const openHistory = (w: Wallet) => {
+   577→    setHistoryWallet(w)
+   578→    setHistoryPage(1)
+   579→    setHistoryFrom('')
+   580→    setHistoryTo('')
+   581→    setHistorySearch('')
+   582→    setHistoryOpen(true)
+   583→  }
+   584→
+   585→  const handleDelete = async () => {
+   586→    if (!deleteTarget) return
+   587→    try {
+   588→      await deleteMutation.mutateAsync(deleteTarget.id)
+   589→    } catch {
+   590→      // useApi already toasted the error.
+   591→    }
+   592→  }
+   593→
+   594→  const handleExportList = () => {
+   595→    window.location.href = '/api/wallets/export'
+   596→  }
+   597→
+   598→  const handleExportHistory = () => {
+   599→    if (!historyWallet) return
+   600→    const params = new URLSearchParams()
+   601→    if (historyFrom) params.set('from', historyFrom)
+   602→    if (historyTo) params.set('to', historyTo)
+   603→    if (historySearch.trim()) params.set('search', historySearch.trim())
+   604→    const qs = params.toString()
+   605→    window.location.href = `/api/wallets/${historyWallet.id}/history/export${qs ? `?${qs}` : ''}`
+   606→  }
+   607→
+   608→  // ---------------------------------------------------------------------------
+   609→  // Derived render helpers
+   610→  // ---------------------------------------------------------------------------
+   611→
+   612→  const typeLabel = (type: WalletType) => t(`wal.${type}`)
+   613→  const operationLabel = (op: string) => t(`wal.operation.${op}`)
+   614→
+   615→  // ---------------------------------------------------------------------------
+   616→  // Render
+   617→  // ---------------------------------------------------------------------------
+   618→
+   619→  return (
+   620→    <div className="space-y-6">
+   621→      <PageHeader
+   622→        title={t('wal.title')}
+   623→        actions={
+   624→          <>
+   625→            <Button variant="outline" onClick={handleExportList} disabled={loading || wallets.length === 0}>
+   626→              <Download className="h-4 w-4" />
+   627→              <span className="hidden sm:inline">{t('common.exportCsv')}</span>
+   628→            </Button>
+   629→            <Button onClick={openCreate}>
+   630→              <Plus className="h-4 w-4" />
+   631→              {t('wal.add')}
+   632→            </Button>
+   633→          </>
+   634→        }
+   635→      />
+   636→
+   637→      {/* Summary strip */}
+   638→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+   639→        <SummaryStatCard
+   640→          label={t('wal.combined')}
+   641→          value={combined}
+   642→          icon={Scale}
+   643→          tone="info"
+   644→          loading={loading}
+   645→        />
+   646→        <SummaryStatCard
+   647→          label={t('wal.bankSubtotal')}
+   648→          value={bankSubtotal}
+   649→          icon={Landmark}
+   650→          tone="default"
+   651→          loading={loading}
+   652→        />
+   653→        <SummaryStatCard
+   654→          label={t('wal.cashSubtotal')}
+   655→          value={cashSubtotal}
+   656→          icon={Banknote}
+   657→          tone="default"
+   658→          loading={loading}
+   659→        />
+   660→      </div>
+   661→
+   662→      {/* Wallet cards grid */}
+   663→      {loading ? (
+   664→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   665→          {Array.from({ length: 3 }).map((_, i) => (
+   666→            <Card key={i}>
+   667→              <CardHeader className="pb-2">
+   668→                <Skeleton className="h-5 w-32" />
+   669→                <Skeleton className="mt-2 h-4 w-20" />
+   670→              </CardHeader>
+   671→              <CardContent>
+   672→                <Skeleton className="h-8 w-40" />
+   673→                <Skeleton className="mt-2 h-3 w-32" />
+   674→              </CardContent>
+   675→            </Card>
+   676→          ))}
+   677→        </div>
+   678→      ) : wallets.length === 0 ? (
+   679→        <EmptyState
+   680→          title={t('wal.empty')}
+   681→          action={
+   682→            <Button onClick={openCreate}>
+   683→              <Plus className="h-4 w-4" />
+   684→              {t('wal.add')}
+   685→            </Button>
+   686→          }
+   687→        />
+   688→      ) : (
+   689→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   690→          {wallets.map((w) => {
+   691→            const TypeIcon = TYPE_ICON[w.type] ?? WalletIcon
+   692→            return (
+   693→              <Card
+   694→                key={w.id}
+   695→                className="overflow-hidden transition-shadow hover:shadow-md"
+   696→                style={{ borderTop: `4px solid ${w.color ?? DEFAULT_COLOR}` }}
+   697→              >
+   698→                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+   699→                  <div className="space-y-1.5 pr-2">
+   700→                    <div className="flex items-center gap-2">
+   701→                      <span
+   702→                        className="inline-flex h-7 w-7 items-center justify-center rounded-md"
+   703→                        style={{ backgroundColor: `${w.color ?? DEFAULT_COLOR}20`, color: w.color ?? DEFAULT_COLOR }}
+   704→                        aria-hidden
+   705→                      >
+   706→                        <TypeIcon className="h-4 w-4" />
+   707→                      </span>
+   708→                      <CardTitle className="text-base leading-tight">{w.name}</CardTitle>
+   709→                    </div>
+   710→                    <div className="flex flex-wrap gap-1.5">
+   711→                      <Badge variant="outline" className="text-[10px]">
+   712→                        {typeLabel(w.type)}
+   713→                      </Badge>
+   714→                      <Badge
+   715→                        variant="outline"
+   716→                        className={cn(
+   717→                          'text-[10px]',
+   718→                          w.active
+   719→                            ? 'border-income/30 text-income'
+   720→                            : 'border-expense/30 text-expense',
+   721→                        )}
+   722→                      >
+   723→                        {w.active ? t('common.active') : t('common.inactive')}
+   724→                      </Badge>
+   725→                      {w.allowOverdraft && (
+   726→                        <Badge variant="outline" className="text-[10px] border-warning/30 text-warning">
+   727→                          {t('wal.allowOverdraft')}
+   728→                        </Badge>
+   729→                      )}
+   730→                    </div>
+   731→                  </div>
+   732→                  <DropdownMenu>
+   733→                    <DropdownMenuTrigger asChild>
+   734→                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+   735→                        <MoreHorizontal className="h-4 w-4" />
+   736→                        <span className="sr-only">{t('common.actions')}</span>
+   737→                      </Button>
+   738→                    </DropdownMenuTrigger>
+   739→                    <DropdownMenuContent align="end" className="w-48">
+   740→                      <DropdownMenuItem onClick={() => openTransfer(w)}>
+   741→                        <ArrowRightLeft className="h-4 w-4" />
+   742→                        {t('wal.transfer')}
+   743→                      </DropdownMenuItem>
+   744→                      <DropdownMenuItem onClick={() => openWithdraw(w)}>
+   745→                        <Banknote className="h-4 w-4" />
+   746→                        {t('wal.withdraw')}
+   747→                      </DropdownMenuItem>
+   748→                      <DropdownMenuItem onClick={() => openAdjust(w)}>
+   749→                        <Scale className="h-4 w-4" />
+   750→                        {t('wal.adjust')}
+   751→                      </DropdownMenuItem>
+   752→                      <DropdownMenuItem onClick={() => openHistory(w)}>
+   753→                        <HistoryIcon className="h-4 w-4" />
+   754→                        {t('wal.history')}
+   755→                      </DropdownMenuItem>
+   756→                      <DropdownMenuSeparator />
+   757→                      <DropdownMenuItem onClick={() => openEdit(w)}>
+   758→                        <Pencil className="h-4 w-4" />
+   759→                        {t('common.edit')}
+   760→                      </DropdownMenuItem>
+   761→                      <DropdownMenuItem
+   762→                        className="text-destructive focus:text-destructive"
+   763→                        onClick={() => setDeleteTarget(w)}
+   764→                      >
+   765→                        <Trash2 className="h-4 w-4" />
+   766→                        {t('common.delete')}
+   767→                      </DropdownMenuItem>
+   768→                    </DropdownMenuContent>
+   769→                  </DropdownMenu>
+   770→                </CardHeader>
+   771→                <CardContent>
+   772→                  <div className="space-y-1">
+   773→                    <p className="text-xs text-muted-foreground">{t('wal.currentBalance')}</p>
+   774→                    <p className="text-2xl font-bold tabular-nums">{money(walletBalance(w))}</p>
+   775→                    <p className="text-xs text-muted-foreground">
+   776→                      {t('wal.initialBalance')}: {money(w.initialBalance)}
+   777→                    </p>
+   778→                    {w.description && (
+   779→                      <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+   780→                        {w.description}
+   781→                      </p>
+   782→                    )}
+   783→                  </div>
+   784→                </CardContent>
+   785→              </Card>
+   786→            )
+   787→          })}
+   788→        </div>
+   789→      )}
+   790→
+   791→      {/* ----------------------------------------------------------------- */}
+   792→      {/* Create / Edit wallet dialog                                       */}
+   793→      {/* ----------------------------------------------------------------- */}
+   794→      <Dialog open={walletDialogOpen} onOpenChange={setWalletDialogOpen}>
+   795→        <DialogContent className="sm:max-w-[560px]">
+   796→          <DialogHeader>
+   797→            <DialogTitle>{editing ? t('wal.edit') : t('wal.add')}</DialogTitle>
+   798→            <DialogDescription>{t('wal.title')}</DialogDescription>
+   799→          </DialogHeader>
+   800→
+   801→          <div className="grid grid-cols-1 gap-4">
+   802→            <div className="space-y-1.5">
+   803→              <Label htmlFor="w-name">
+   804→                {t('common.name')} <span className="text-destructive">*</span>
+   805→              </Label>
+   806→              <Input
+   807→                id="w-name"
+   808→                value={formName}
+   809→                onChange={(e) => setFormName(e.target.value)}
+   810→                placeholder={t('common.name')}
+   811→              />
+   812→            </div>
+   813→
+   814→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   815→              <div className="space-y-1.5">
+   816→                <Label htmlFor="w-type">{t('common.type')}</Label>
+   817→                <Select value={formType} onValueChange={(v) => setFormType(v as WalletType)}>
+   818→                  <SelectTrigger id="w-type" className="w-full">
+   819→                    <SelectValue />
+   820→                  </SelectTrigger>
+   821→                  <SelectContent>
+   822→                    {WALLET_TYPES.map((typ) => (
+   823→                      <SelectItem key={typ} value={typ}>
+   824→                        {typeLabel(typ)}
+   825→                      </SelectItem>
+   826→                    ))}
+   827→                  </SelectContent>
+   828→                </Select>
+   829→              </div>
+   830→
+   831→              <div className="space-y-1.5">
+   832→                <Label htmlFor="w-color">{t('common.color')}</Label>
+   833→                <div className="flex items-center gap-2">
+   834→                  <Input
+   835→                    id="w-color"
+   836→                    type="color"
+   837→                    value={formColor}
+   838→                    onChange={(e) => setFormColor(e.target.value)}
+   839→                    className="h-9 w-14 cursor-pointer p-1"
+   840→                  />
+   841→                  <span className="text-xs text-muted-foreground tabular-nums">{formColor}</span>
+   842→                </div>
+   843→              </div>
+   844→            </div>
+   845→
+   846→            <div className="space-y-1.5">
+   847→              <Label htmlFor="w-initial">{t('wal.initialBalance')}</Label>
+   848→              <Input
+   849→                id="w-initial"
+   850→                type="number"
+   851→                step="0.01"
+   852→                inputMode="decimal"
+   853→                value={formInitialBalance}
+   854→                onChange={(e) => setFormInitialBalance(e.target.value)}
+   855→                disabled={!!editing}
+   856→                placeholder="0.00"
+   857→              />
+   858→              {editing && (
+   859→                <p className="text-xs text-muted-foreground">
+   860→                  {t('wal.initialBalance')} —{' '}
+   861→                  <span className="text-warning">
+   862→                    {t('common.edit')}: {t('wal.adjust')}
+   863→                  </span>
+   864→                </p>
+   865→              )}
+   866→            </div>
+   867→
+   868→            <div className="space-y-1.5">
+   869→              <Label htmlFor="w-desc">{t('common.description')}</Label>
+   870→              <Textarea
+   871→                id="w-desc"
+   872→                value={formDescription}
+   873→                onChange={(e) => setFormDescription(e.target.value)}
+   874→                rows={2}
+   875→                placeholder={t('common.description')}
+   876→              />
+   877→            </div>
+   878→
+   879→            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+   880→              <div className="flex items-center justify-between rounded-md border p-3">
+   881→                <div className="space-y-0.5 pr-3">
+   882→                  <Label htmlFor="w-overdraft" className="text-sm">
+   883→                    {t('wal.allowOverdraft')}
+   884→                  </Label>
+   885→                </div>
+   886→                <Switch
+   887→                  id="w-overdraft"
+   888→                  checked={formAllowOverdraft}
+   889→                  onCheckedChange={setFormAllowOverdraft}
+   890→                />
+   891→              </div>
+   892→              <div className="flex items-center justify-between rounded-md border p-3">
+   893→                <div className="space-y-0.5 pr-3">
+   894→                  <Label htmlFor="w-active" className="text-sm">
+   895→                    {t('common.status')}
+   896→                  </Label>
+   897→                </div>
+   898→                <div className="flex items-center gap-2">
+   899→                  <Switch
+   900→                    id="w-active"
+   901→                    checked={formActive}
+   902→                    onCheckedChange={setFormActive}
+   903→                  />
+   904→                  <span className="text-xs text-muted-foreground">
+   905→                    {formActive ? t('common.active') : t('common.inactive')}
+   906→                  </span>
+   907→                </div>
+   908→              </div>
+   909→            </div>
+   910→          </div>
+   911→
+   912→          <DialogFooter>
+   913→            <Button
+   914→              variant="outline"
+   915→              onClick={() => setWalletDialogOpen(false)}
+   916→              disabled={submittingWallet}
+   917→            >
+   918→              {t('common.cancel')}
+   919→            </Button>
+   920→            <Button onClick={handleWalletSubmit} disabled={submittingWallet}>
+   921→              {submittingWallet ? t('common.loading') : editing ? t('common.save') : t('common.create')}
+   922→            </Button>
+   923→          </DialogFooter>
+   924→        </DialogContent>
+   925→      </Dialog>
+   926→
+   927→      {/* ----------------------------------------------------------------- */}
+   928→      {/* Transfer dialog                                                   */}
+   929→      {/* ----------------------------------------------------------------- */}
+   930→      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+   931→        <DialogContent className="sm:max-w-[520px]">
+   932→          <DialogHeader>
+   933→            <DialogTitle>{t('transfer.title')}</DialogTitle>
+   934→            <DialogDescription>{t('wal.transfer')}</DialogDescription>
+   935→          </DialogHeader>
+   936→
+   937→          <div className="grid grid-cols-1 gap-4">
+   938→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   939→              <div className="space-y-1.5">
+   940→                <Label htmlFor="t-source">
+   941→                  {t('transfer.source')} <span className="text-destructive">*</span>
+   942→                </Label>
+   943→                <Select value={transferSource} onValueChange={setTransferSource}>
+   944→                  <SelectTrigger id="t-source" className="w-full">
+   945→                    <SelectValue placeholder={t('common.wallet')} />
+   946→                  </SelectTrigger>
+   947→                  <SelectContent>
+   948→                    {wallets.map((w) => (
+   949→                      <SelectItem key={w.id} value={w.id}>
+   950→                        <span className="inline-flex items-center gap-2">
+   951→                          <span
+   952→                            className="inline-block h-2.5 w-2.5 rounded-full"
+   953→                            style={{ backgroundColor: w.color ?? DEFAULT_COLOR }}
+   954→                            aria-hidden
+   955→                          />
+   956→                          {w.name}
+   957→                        </span>
+   958→                      </SelectItem>
+   959→                    ))}
+   960→                  </SelectContent>
+   961→                </Select>
+   962→              </div>
+   963→              <div className="space-y-1.5">
+   964→                <Label htmlFor="t-dest">
+   965→                  {t('transfer.destination')} <span className="text-destructive">*</span>
+   966→                </Label>
+   967→                <Select value={transferDest} onValueChange={setTransferDest}>
+   968→                  <SelectTrigger id="t-dest" className="w-full">
+   969→                    <SelectValue placeholder={t('common.wallet')} />
+   970→                  </SelectTrigger>
+   971→                  <SelectContent>
+   972→                    {wallets
+   973→                      .filter((w) => w.id !== transferSource)
+   974→                      .map((w) => (
+   975→                        <SelectItem key={w.id} value={w.id}>
+   976→                          <span className="inline-flex items-center gap-2">
+   977→                            <span
+   978→                              className="inline-block h-2.5 w-2.5 rounded-full"
+   979→                              style={{ backgroundColor: w.color ?? DEFAULT_COLOR }}
+   980→                              aria-hidden
+   981→                            />
+   982→                            {w.name}
+   983→                          </span>
+   984→                        </SelectItem>
+   985→                      ))}
+   986→                  </SelectContent>
+   987→                </Select>
+   988→              </div>
+   989→            </div>
+   990→
+   991→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   992→              <div className="space-y-1.5">
+   993→                <Label htmlFor="t-amount">
+   994→                  {t('common.amount')} <span className="text-destructive">*</span>
+   995→                </Label>
+   996→                <Input
+   997→                  id="t-amount"
+   998→                  type="number"
+   999→                  step="0.01"
+  1000→                  min="0"
+  1001→                  inputMode="decimal"
+  1002→                  value={transferAmount}
+  1003→                  onChange={(e) => setTransferAmount(e.target.value)}
+  1004→                  placeholder="0.00"
+  1005→                />
+  1006→              </div>
+  1007→              <div className="space-y-1.5">
+  1008→                <Label htmlFor="t-date">
+  1009→                  {t('common.date')} <span className="text-destructive">*</span>
+  1010→                </Label>
+  1011→                <Input
+  1012→                  id="t-date"
+  1013→                  type="date"
+  1014→                  value={transferDate}
+  1015→                  onChange={(e) => setTransferDate(e.target.value)}
+  1016→                />
+  1017→              </div>
+  1018→            </div>
+  1019→
+  1020→            <div className="space-y-1.5">
+  1021→              <Label htmlFor="t-comment">{t('common.comment')}</Label>
+  1022→              <Textarea
+  1023→                id="t-comment"
+  1024→                value={transferComment}
+  1025→                onChange={(e) => setTransferComment(e.target.value)}
+  1026→                rows={2}
+  1027→                placeholder={t('common.comment')}
+  1028→              />
+  1029→            </div>
+  1030→          </div>
+  1031→
+  1032→          <DialogFooter>
+  1033→            <Button
+  1034→              variant="outline"
+  1035→              onClick={() => setTransferOpen(false)}
+  1036→              disabled={submittingTransfer}
+  1037→            >
+  1038→              {t('common.cancel')}
+  1039→            </Button>
+  1040→            <Button onClick={handleTransferSubmit} disabled={submittingTransfer}>
+  1041→              {submittingTransfer ? t('common.loading') : t('common.save')}
+  1042→            </Button>
+  1043→          </DialogFooter>
+  1044→        </DialogContent>
+  1045→      </Dialog>
+  1046→
+  1047→      {/* ----------------------------------------------------------------- */}
+  1048→      {/* Withdraw dialog                                                   */}
+  1049→      {/* ----------------------------------------------------------------- */}
+  1050→      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+  1051→        <DialogContent className="sm:max-w-[520px]">
+  1052→          <DialogHeader>
+  1053→            <DialogTitle>{t('withdraw.title')}</DialogTitle>
+  1054→            <DialogDescription>{t('wal.withdraw')}</DialogDescription>
+  1055→          </DialogHeader>
+  1056→
+  1057→          <div className="grid grid-cols-1 gap-4">
+  1058→            <div className="space-y-1.5">
+  1059→              <Label>{t('withdraw.type')}</Label>
+  1060→              <RadioGroup
+  1061→                value={withdrawType}
+  1062→                onValueChange={(v) => setWithdrawType(v as 'external' | 'internal')}
+  1063→                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+  1064→              >
+  1065→                <Label
+  1066→                  htmlFor="wt-external"
+  1067→                  className="flex cursor-pointer items-center gap-2 rounded-md border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+  1068→                >
+  1069→                  <RadioGroupItem id="wt-external" value="external" />
+  1070→                  <span className="text-sm">{t('withdraw.external')}</span>
+  1071→                </Label>
+  1072→                <Label
+  1073→                  htmlFor="wt-internal"
+  1074→                  className="flex cursor-pointer items-center gap-2 rounded-md border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+  1075→                >
+  1076→                  <RadioGroupItem id="wt-internal" value="internal" />
+  1077→                  <span className="text-sm">{t('withdraw.internal')}</span>
+  1078→                </Label>
+  1079→              </RadioGroup>
+  1080→            </div>
+  1081→
+  1082→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  1083→              <div className="space-y-1.5">
+  1084→                <Label htmlFor="wd-source">
+  1085→                  {t('transfer.source')} <span className="text-destructive">*</span>
+  1086→                </Label>
+  1087→                <Select value={withdrawSource} onValueChange={setWithdrawSource}>
+  1088→                  <SelectTrigger id="wd-source" className="w-full">
+  1089→                    <SelectValue placeholder={t('common.wallet')} />
+  1090→                  </SelectTrigger>
+  1091→                  <SelectContent>
+  1092→                    {wallets.map((w) => (
+  1093→                      <SelectItem key={w.id} value={w.id}>
+  1094→                        <span className="inline-flex items-center gap-2">
+  1095→                          <span
+  1096→                            className="inline-block h-2.5 w-2.5 rounded-full"
+  1097→                            style={{ backgroundColor: w.color ?? DEFAULT_COLOR }}
+  1098→                            aria-hidden
+  1099→                          />
+  1100→                          {w.name}
+  1101→                        </span>
+  1102→                      </SelectItem>
+  1103→                    ))}
+  1104→                  </SelectContent>
+  1105→                </Select>
+  1106→              </div>
+  1107→              {withdrawType === 'internal' && (
+  1108→                <div className="space-y-1.5">
+  1109→                  <Label htmlFor="wd-dest">
+  1110→                    {t('withdraw.destination')} <span className="text-destructive">*</span>
+  1111→                  </Label>
+  1112→                  <Select value={withdrawDest} onValueChange={setWithdrawDest}>
+  1113→                    <SelectTrigger id="wd-dest" className="w-full">
+  1114→                      <SelectValue placeholder={t('common.wallet')} />
+  1115→                    </SelectTrigger>
+  1116→                    <SelectContent>
+  1117→                      {wallets
+  1118→                        .filter((w) => w.id !== withdrawSource)
+  1119→                        .map((w) => (
+  1120→                          <SelectItem key={w.id} value={w.id}>
+  1121→                            <span className="inline-flex items-center gap-2">
+  1122→                              <span
+  1123→                                className="inline-block h-2.5 w-2.5 rounded-full"
+  1124→                                style={{ backgroundColor: w.color ?? DEFAULT_COLOR }}
+  1125→                                aria-hidden
+  1126→                              />
+  1127→                              {w.name}
+  1128→                            </span>
+  1129→                          </SelectItem>
+  1130→                        ))}
+  1131→                    </SelectContent>
+  1132→                  </Select>
+  1133→                </div>
+  1134→              )}
+  1135→            </div>
+  1136→
+  1137→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  1138→              <div className="space-y-1.5">
+  1139→                <Label htmlFor="wd-amount">
+  1140→                  {t('common.amount')} <span className="text-destructive">*</span>
+  1141→                </Label>
+  1142→                <Input
+  1143→                  id="wd-amount"
+  1144→                  type="number"
+  1145→                  step="0.01"
+  1146→                  min="0"
+  1147→                  inputMode="decimal"
+  1148→                  value={withdrawAmount}
+  1149→                  onChange={(e) => setWithdrawAmount(e.target.value)}
+  1150→                  placeholder="0.00"
+  1151→                />
+  1152→              </div>
+  1153→              <div className="space-y-1.5">
+  1154→                <Label htmlFor="wd-date">
+  1155→                  {t('common.date')} <span className="text-destructive">*</span>
+  1156→                </Label>
+  1157→                <Input
+  1158→                  id="wd-date"
+  1159→                  type="date"
+  1160→                  value={withdrawDate}
+  1161→                  onChange={(e) => setWithdrawDate(e.target.value)}
+  1162→                />
+  1163→              </div>
+  1164→            </div>
+  1165→
+  1166→            <div className="space-y-1.5">
+  1167→              <Label htmlFor="wd-comment">{t('common.comment')}</Label>
+  1168→              <Textarea
+  1169→                id="wd-comment"
+  1170→                value={withdrawComment}
+  1171→                onChange={(e) => setWithdrawComment(e.target.value)}
+  1172→                rows={2}
+  1173→                placeholder={t('common.comment')}
+  1174→              />
+  1175→            </div>
+  1176→          </div>
+  1177→
+  1178→          <DialogFooter>
+  1179→            <Button
+  1180→              variant="outline"
+  1181→              onClick={() => setWithdrawOpen(false)}
+  1182→              disabled={submittingWithdraw}
+  1183→            >
+  1184→              {t('common.cancel')}
+  1185→            </Button>
+  1186→            <Button onClick={handleWithdrawSubmit} disabled={submittingWithdraw}>
+  1187→              {submittingWithdraw ? t('common.loading') : t('common.save')}
+  1188→            </Button>
+  1189→          </DialogFooter>
+  1190→        </DialogContent>
+  1191→      </Dialog>
+  1192→
+  1193→      {/* ----------------------------------------------------------------- */}
+  1194→      {/* Adjust dialog                                                     */}
+  1195→      {/* ----------------------------------------------------------------- */}
+  1196→      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+  1197→        <DialogContent className="sm:max-w-[520px]">
+  1198→          <DialogHeader>
+  1199→            <DialogTitle>{t('adjust.title')}</DialogTitle>
+  1200→            <DialogDescription>
+  1201→              {adjustWallet ? adjustWallet.name : ''}
+  1202→            </DialogDescription>
+  1203→          </DialogHeader>
+  1204→
+  1205→          <div className="grid grid-cols-1 gap-4">
+  1206→            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+  1207→              <div className="space-y-1 rounded-md border p-3">
+  1208→                <p className="text-xs text-muted-foreground">{t('adjust.systemBalance')}</p>
+  1209→                <p className="text-lg font-semibold tabular-nums">
+  1210→                  {adjustDetailQuery.isLoading
+  1211→                    ? '…'
+  1212→                    : money(
+  1213→                        adjustDetailQuery.data?.balance ??
+  1214→                          adjustWallet?.balance ??
+  1215→                          '0.00',
+  1216→                      )}
+  1217→                </p>
+  1218→              </div>
+  1219→              <div className="space-y-1 rounded-md border p-3">
+  1220→                <p className="text-xs text-muted-foreground">{t('wal.initialBalance')}</p>
+  1221→                <p className="text-lg font-semibold tabular-nums text-muted-foreground">
+  1222→                  {money(adjustWallet?.initialBalance ?? '0.00')}
+  1223→                </p>
+  1224→              </div>
+  1225→            </div>
+  1226→
+  1227→            <div className="space-y-1.5">
+  1228→              <Label>{t('adjust.title')}</Label>
+  1229→              <RadioGroup
+  1230→                value={adjustMode}
+  1231→                onValueChange={(v) => setAdjustMode(v as 'actual' | 'adjustment')}
+  1232→                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+  1233→              >
+  1234→                <Label
+  1235→                  htmlFor="am-actual"
+  1236→                  className="flex cursor-pointer items-center gap-2 rounded-md border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+  1237→                >
+  1238→                  <RadioGroupItem id="am-actual" value="actual" />
+  1239→                  <span className="text-sm">{t('adjust.actualBalance')}</span>
+  1240→                </Label>
+  1241→                <Label
+  1242→                  htmlFor="am-adj"
+  1243→                  className="flex cursor-pointer items-center gap-2 rounded-md border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+  1244→                >
+  1245→                  <RadioGroupItem id="am-adj" value="adjustment" />
+  1246→                  <span className="text-sm">{t('adjust.adjustment')}</span>
+  1247→                </Label>
+  1248→              </RadioGroup>
+  1249→            </div>
+  1250→
+  1251→            {adjustMode === 'actual' ? (
+  1252→              <div className="space-y-1.5">
+  1253→                <Label htmlFor="a-actual">
+  1254→                  {t('adjust.actualBalance')} <span className="text-destructive">*</span>
+  1255→                </Label>
+  1256→                <Input
+  1257→                  id="a-actual"
+  1258→                  type="number"
+  1259→                  step="0.01"
+  1260→                  inputMode="decimal"
+  1261→                  value={adjustActual}
+  1262→                  onChange={(e) => setAdjustActual(e.target.value)}
+  1263→                  placeholder="0.00"
+  1264→                />
+  1265→              </div>
+  1266→            ) : (
+  1267→              <div className="space-y-1.5">
+  1268→                <Label htmlFor="a-adj">
+  1269→                  {t('adjust.adjustment')} <span className="text-destructive">*</span>
+  1270→                </Label>
+  1271→                <Input
+  1272→                  id="a-adj"
+  1273→                  type="number"
+  1274→                  step="0.01"
+  1275→                  inputMode="decimal"
+  1276→                  value={adjustAdjustment}
+  1277→                  onChange={(e) => setAdjustAdjustment(e.target.value)}
+  1278→                  placeholder="-100.00"
+  1279→                />
+  1280→                <p className="text-xs text-muted-foreground">
+  1281→                  {t('adjust.adjustment')} · +/−
+  1282→                </p>
+  1283→              </div>
+  1284→            )}
+  1285→
+  1286→            <div className="space-y-1.5">
+  1287→              <Label htmlFor="a-date">
+  1288→                {t('common.date')} <span className="text-destructive">*</span>
+  1289→              </Label>
+  1290→              <Input
+  1291→                id="a-date"
+  1292→                type="date"
+  1293→                value={adjustDate}
+  1294→                onChange={(e) => setAdjustDate(e.target.value)}
+  1295→              />
+  1296→            </div>
+  1297→
+  1298→            <div className="space-y-1.5">
+  1299→              <Label htmlFor="a-reason">
+  1300→                {t('common.reason')} <span className="text-destructive">*</span>
+  1301→              </Label>
+  1302→              <Textarea
+  1303→                id="a-reason"
+  1304→                value={adjustReason}
+  1305→                onChange={(e) => setAdjustReason(e.target.value)}
+  1306→                rows={3}
+  1307→                placeholder={t('common.reason')}
+  1308→              />
+  1309→            </div>
+  1310→          </div>
+  1311→
+  1312→          <DialogFooter>
+  1313→            <Button
+  1314→              variant="outline"
+  1315→              onClick={() => setAdjustOpen(false)}
+  1316→              disabled={submittingAdjust}
+  1317→            >
+  1318→              {t('common.cancel')}
+  1319→            </Button>
+  1320→            <Button onClick={handleAdjustSubmit} disabled={submittingAdjust}>
+  1321→              {submittingAdjust ? t('common.loading') : t('common.save')}
+  1322→            </Button>
+  1323→          </DialogFooter>
+  1324→        </DialogContent>
+  1325→      </Dialog>
+  1326→
+  1327→      {/* ----------------------------------------------------------------- */}
+  1328→      {/* History dialog (full-width)                                       */}
+  1329→      {/* ----------------------------------------------------------------- */}
+  1330→      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+  1331→        <DialogContent className="sm:max-w-[900px]">
+  1332→          <DialogHeader>
+  1333→            <DialogTitle>
+  1334→              {t('wal.history')}
+  1335→              {historyWallet ? ` — ${historyWallet.name}` : ''}
+  1336→            </DialogTitle>
+  1337→            <DialogDescription>{t('wal.history')}</DialogDescription>
+  1338→          </DialogHeader>
+  1339→
+  1340→          {/* History filters */}
+  1341→          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+  1342→            <div className="space-y-1.5">
+  1343→              <Label htmlFor="h-from" className="text-xs text-muted-foreground">
+  1344→                {t('common.from')}
+  1345→              </Label>
+  1346→              <Input
+  1347→                id="h-from"
+  1348→                type="date"
+  1349→                value={historyFrom}
+  1350→                onChange={(e) => setHistoryFrom(e.target.value)}
+  1351→                className="w-full"
+  1352→              />
+  1353→            </div>
+  1354→            <div className="space-y-1.5">
+  1355→              <Label htmlFor="h-to" className="text-xs text-muted-foreground">
+  1356→                {t('common.to')}
+  1357→              </Label>
+  1358→              <Input
+  1359→                id="h-to"
+  1360→                type="date"
+  1361→                value={historyTo}
+  1362→                onChange={(e) => setHistoryTo(e.target.value)}
+  1363→                className="w-full"
+  1364→              />
+  1365→            </div>
+  1366→            <div className="space-y-1.5 sm:col-span-2">
+  1367→              <Label htmlFor="h-search" className="text-xs text-muted-foreground">
+  1368→                {t('common.search')}
+  1369→              </Label>
+  1370→              <div className="relative">
+  1371→                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+  1372→                <Input
+  1373→                  id="h-search"
+  1374→                  value={historySearch}
+  1375→                  onChange={(e) => setHistorySearch(e.target.value)}
+  1376→                  placeholder={t('common.comment')}
+  1377→                  className="pl-8"
+  1378→                />
+  1379→              </div>
+  1380→            </div>
+  1381→          </div>
+  1382→
+  1383→          <div className="flex items-center justify-end">
+  1384→            <Button
+  1385→              variant="outline"
+  1386→              size="sm"
+  1387→              onClick={handleExportHistory}
+  1388→              disabled={!historyWallet || historyQuery.isLoading || historyTotal === 0}
+  1389→            >
+  1390→              <Download className="h-4 w-4" />
+  1391→              {t('common.exportCsv')}
+  1392→            </Button>
+  1393→          </div>
+  1394→
+  1395→          {/* History table */}
+  1396→          <div className="max-h-[460px] overflow-y-auto scrollbar-thin rounded-md border">
+  1397→            {historyQuery.isLoading ? (
+  1398→              <div className="space-y-2 p-3">
+  1399→                {Array.from({ length: 6 }).map((_, i) => (
+  1400→                  <Skeleton key={i} className="h-10 w-full" />
+  1401→                ))}
+  1402→              </div>
+  1403→            ) : (historyQuery.data?.items ?? []).length === 0 ? (
+  1404→              <div className="p-4">
+  1405→                <EmptyState title={t('common.empty')} />
+  1406→              </div>
+  1407→            ) : (
+  1408→              <Table>
+  1409→                <TableHeader className="sticky top-0 z-10 bg-card">
+  1410→                  <TableRow className="hover:bg-transparent">
+  1411→                    <TableHead className="w-[110px]">{t('common.date')}</TableHead>
+  1412→                    <TableHead className="w-[140px]">{t('common.type')}</TableHead>
+  1413→                    <TableHead className="w-[90px]">{t('wal.direction.credit')}</TableHead>
+  1414→                    <TableHead className="text-right">{t('common.amount')}</TableHead>
+  1415→                    <TableHead>{t('common.comment')}</TableHead>
+  1416→                  </TableRow>
+  1417→                </TableHeader>
+  1418→                <TableBody>
+  1419→                  {(historyQuery.data?.items ?? []).map((e) => {
+  1420→                    const signed = e.direction === 'credit' ? e.amount : fromCents(-toCents(e.amount))
+  1421→                    return (
+  1422→                      <TableRow key={e.id}>
+  1423→                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+  1424→                          {date(e.financialDate)}
+  1425→                        </TableCell>
+  1426→                        <TableCell>
+  1427→                          <Badge variant="outline" className="text-[10px]">
+  1428→                            {operationLabel(e.operationType)}
+  1429→                          </Badge>
+  1430→                        </TableCell>
+  1431→                        <TableCell>
+  1432→                          <Badge
+  1433→                            variant="outline"
+  1434→                            className={cn(
+  1435→                              'text-[10px]',
+  1436→                              e.direction === 'credit'
+  1437→                                ? 'border-income/30 text-income'
+  1438→                                : 'border-expense/30 text-expense',
+  1439→                            )}
+  1440→                          >
+  1441→                            {t(`wal.direction.${e.direction}`)}
+  1442→                          </Badge>
+  1443→                        </TableCell>
+  1444→                        <TableCell className="text-right">
+  1445→                          <MoneyText
+  1446→                            value={signed}
+  1447→                            tone={e.direction === 'credit' ? 'income' : 'expense'}
+  1448→                            className="text-sm"
+  1449→                          />
+  1450→                        </TableCell>
+  1451→                        <TableCell className="max-w-[280px] text-sm text-muted-foreground">
+  1452→                          <span className="line-clamp-1">{e.comment ?? '—'}</span>
+  1453→                        </TableCell>
+  1454→                      </TableRow>
+  1455→                    )
+  1456→                  })}
+  1457→                </TableBody>
+  1458→              </Table>
+  1459→            )}
+  1460→          </div>
+  1461→
+  1462→          {/* History pagination */}
+  1463→          {!historyQuery.isLoading && historyTotal > 0 && (
+  1464→            <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+  1465→              <p className="text-xs text-muted-foreground">
+  1466→                {t('common.page')} {clampPage(historyPage, historyTotalPages)}{' '}
+  1467→                {t('common.of')} {historyTotalPages} · {historyTotal}
+  1468→              </p>
+  1469→              <Pagination className="mx-0 w-auto">
+  1470→                <PaginationContent>
+  1471→                  <PaginationItem>
+  1472→                    <PaginationPrevious
+  1473→                      href="#"
+  1474→                      onClick={(e) => {
+  1475→                        e.preventDefault()
+  1476→                        setHistoryPage((p) => clampPage(p - 1, historyTotalPages))
+  1477→                      }}
+  1478→                      aria-disabled={historyPage <= 1}
+  1479→                      className={cn(historyPage <= 1 && 'pointer-events-none opacity-50')}
+  1480→                    />
+  1481→                  </PaginationItem>
+  1482→                  {buildPageList(historyPage, historyTotalPages).map((p, i) =>
+  1483→                    p === 'ellipsis' ? (
+  1484→                      <PaginationItem key={`e-${i}`}>
+  1485→                        <PaginationEllipsis />
+  1486→                      </PaginationItem>
+  1487→                    ) : (
+  1488→                      <PaginationItem key={p}>
+  1489→                        <PaginationLink
+  1490→                          href="#"
+  1491→                          isActive={p === historyPage}
+  1492→                          onClick={(e) => {
+  1493→                            e.preventDefault()
+  1494→                            setHistoryPage(p)
+  1495→                          }}
+  1496→                        >
+  1497→                          {p}
+  1498→                        </PaginationLink>
+  1499→                      </PaginationItem>
+  1500→                    ),
+  1501→                  )}
+  1502→                  <PaginationItem>
+  1503→                    <PaginationNext
+  1504→                      href="#"
+  1505→                      onClick={(e) => {
+  1506→                        e.preventDefault()
+  1507→                        setHistoryPage((p) => clampPage(p + 1, historyTotalPages))
+  1508→                      }}
+  1509→                      aria-disabled={historyPage >= historyTotalPages}
+  1510→                      className={cn(historyPage >= historyTotalPages && 'pointer-events-none opacity-50')}
+  1511→                    />
+  1512→                  </PaginationItem>
+  1513→                </PaginationContent>
+  1514→              </Pagination>
+  1515→            </div>
+  1516→          )}
+  1517→
+  1518→          <DialogFooter>
+  1519→            <Button variant="outline" onClick={() => setHistoryOpen(false)}>
+  1520→              {t('common.close')}
+  1521→            </Button>
+  1522→          </DialogFooter>
+  1523→        </DialogContent>
+  1524→      </Dialog>
+  1525→
+  1526→      {/* Delete confirmation */}
+  1527→      <ConfirmDialog
+  1528→        open={!!deleteTarget}
+  1529→        onOpenChange={(v) => !v && setDeleteTarget(null)}
+  1530→        title={t('common.delete')}
+  1531→        description={deleteTarget?.name ?? ''}
+  1532→        confirmLabel={t('common.delete')}
+  1533→        cancelLabel={t('common.cancel')}
+  1534→        destructive
+  1535→        onConfirm={handleDelete}
+  1536→      />
+  1537→    </div>
+  1538→  )
+  1539→}
+  1540→
+  1541→// ---------------------------------------------------------------------------
+  1542→// Local StatCard (uses money() from i18n; avoids prop type mismatch with shared StatCard)
+  1543→// ---------------------------------------------------------------------------
+  1544→
+  1545→function SummaryStatCard({
+  1546→  label,
+  1547→  value,
+  1548→  icon: Icon,
+  1549→  tone = 'default',
+  1550→  loading,
+  1551→}: {
+  1552→  label: string
+  1553→  value: string
+  1554→  icon?: typeof WalletIcon
+  1555→  tone?: 'default' | 'income' | 'expense' | 'warning' | 'info'
+  1556→  loading?: boolean
+  1557→}) {
+  1558→  const { money } = useI18n()
+  1559→  const toneText =
+  1560→    tone === 'income'
+  1561→      ? 'text-income'
+  1562→      : tone === 'expense'
+  1563→        ? 'text-expense'
+  1564→        : tone === 'warning'
+  1565→          ? 'text-warning'
+  1566→          : tone === 'info'
+  1567→            ? 'text-info'
+  1568→            : 'text-foreground'
+  1569→  const toneIconBg =
+  1570→    tone === 'income'
+  1571→      ? 'bg-income/15 text-income'
+  1572→      : tone === 'expense'
+  1573→        ? 'bg-expense/15 text-expense'
+  1574→        : tone === 'warning'
+  1575→          ? 'bg-warning/15 text-warning'
+  1576→          : tone === 'info'
+  1577→            ? 'bg-info/15 text-info'
+  1578→            : 'bg-muted text-foreground'
+  1579→  return (
+  1580→    <Card className="overflow-hidden">
+  1581→      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+  1582→        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+  1583→          {label}
+  1584→        </CardTitle>
+  1585→        {Icon && (
+  1586→          <div className={cn('rounded-md p-1.5', toneIconBg)}>
+  1587→            <Icon className="h-4 w-4" />
+  1588→          </div>
+  1589→        )}
+  1590→      </CardHeader>
+  1591→      <CardContent>
+  1592→        {loading ? (
+  1593→          <Skeleton className="h-7 w-28" />
+  1594→        ) : (
+  1595→          <div className={cn('text-2xl font-bold tabular-nums', toneText)}>{money(value)}</div>
+  1596→        )}
+  1597→      </CardContent>
+  1598→    </Card>
+  1599→  )
+  1600→}
+  1601→

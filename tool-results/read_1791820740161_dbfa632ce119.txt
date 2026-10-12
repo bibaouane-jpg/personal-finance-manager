@@ -1,0 +1,1087 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useMemo, useState, useEffect } from 'react'
+     4→     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→     5→import { toast } from 'sonner'
+     6→     6→import {
+     7→     7→  Plus,
+     8→     8→  Download,
+     9→     9→  Search,
+    10→    10→  Eye,
+    11→    11→  Pencil,
+    12→    12→  Trash2,
+    13→    13→  MoreHorizontal,
+    14→    14→  ArrowDown,
+    15→    15→  ArrowUp,
+    16→    16→  ArrowUpDown,
+    17→    17→  TrendingUp,
+    18→    18→  TrendingDown,
+    19→    19→  Hash,
+    20→    20→  Calculator,
+    21→    21→} from 'lucide-react'
+    22→    22→
+    23→    23→import { useI18n } from '@/lib/use-i18n'
+    24→    24→import { useApi } from '@/lib/use-api'
+    25→    25→import { toCents, fromCents, toLocalDateString } from '@/lib/money'
+    26→    26→import { cn } from '@/lib/utils'
+    27→    27→
+    28→    28→import { Card, CardContent } from '@/components/ui/card'
+    29→    29→import { Button } from '@/components/ui/button'
+    30→    30→import { Input } from '@/components/ui/input'
+    31→    31→import { Label } from '@/components/ui/label'
+    32→    32→import { Textarea } from '@/components/ui/textarea'
+    33→    33→import { Badge } from '@/components/ui/badge'
+    34→    34→import { Skeleton } from '@/components/ui/skeleton'
+    35→    35→import { ScrollArea } from '@/components/ui/scroll-area'
+    36→    36→import {
+    37→    37→  Select,
+    38→    38→  SelectContent,
+    39→    39→  SelectItem,
+    40→    40→  SelectTrigger,
+    41→    41→  SelectValue,
+    42→    42→} from '@/components/ui/select'
+    43→    43→import {
+    44→    44→  Dialog,
+    45→    45→  DialogContent,
+    46→    46→  DialogDescription,
+    47→    47→  DialogFooter,
+    48→    48→  DialogHeader,
+    49→    49→  DialogTitle,
+    50→    50→} from '@/components/ui/dialog'
+    51→    51→import {
+    52→    52→  Table,
+    53→    53→  TableBody,
+    54→    54→  TableCell,
+    55→    55→  TableHead,
+    56→    56→  TableHeader,
+    57→    57→  TableRow,
+    58→    58→} from '@/components/ui/table'
+    59→    59→import {
+    60→    60→  DropdownMenu,
+    61→    61→  DropdownMenuContent,
+    62→    62→  DropdownMenuItem,
+    63→    63→  DropdownMenuSeparator,
+    64→    64→  DropdownMenuTrigger,
+    65→    65→} from '@/components/ui/dropdown-menu'
+    66→    66→import {
+    67→    67→  Pagination,
+    68→    68→  PaginationContent,
+    69→    69→  PaginationItem,
+    70→    70→  PaginationLink,
+    71→    71→  PaginationNext,
+    72→    72→  PaginationPrevious,
+    73→    73→  PaginationEllipsis,
+    74→    74→} from '@/components/ui/pagination'
+    75→    75→import { EmptyState, PageHeader, MoneyText } from '@/components/shared'
+    76→    76→import { ConfirmDialog } from '@/components/confirm-dialog'
+    77→    77→
+    78→    78→// ---------------------------------------------------------------------------
+    79→    79→// Types
+    80→    80→// ---------------------------------------------------------------------------
+    81→    81→
+    82→    82→export type TxnKind = 'income' | 'expense'
+    83→    83→
+    84→    84→type PeriodFilter =
+    85→    85→  | 'today'
+    86→    86→  | 'this_week'
+    87→    87→  | 'this_month'
+    88→    88→  | 'this_year'
+    89→    89→  | 'all_time'
+    90→    90→  | 'custom_range'
+    91→    91→
+    92→    92→type SortKey = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'
+    93→    93→
+    94→    94→interface TxnCategory {
+    95→    95→  id: string
+    96→    96→  name: string
+    97→    97→  color: string | null
+    98→    98→}
+    99→    99→interface TxnArticle {
+   100→   100→  id: string
+   101→   101→  name: string
+   102→   102→  defaultAmount: string | null
+   103→   103→  defaultCategoryId: string | null
+   104→   104→  defaultCategory?: TxnCategory | null
+   105→   105→}
+   106→   106→interface TxnWallet {
+   107→   107→  id: string
+   108→   108→  name: string
+   109→   109→  type: string
+   110→   110→  color: string | null
+   111→   111→  balance: string
+   112→   112→  active: boolean
+   113→   113→}
+   114→   114→interface TxnRow {
+   115→   115→  id: string
+   116→   116→  name: string
+   117→   117→  amount: string
+   118→   118→  financialDate: string
+   119→   119→  comment: string | null
+   120→   120→  createdAt: string
+   121→   121→  updatedAt: string
+   122→   122→  categoryId: string | null
+   123→   123→  category: TxnCategory | null
+   124→   124→  articleId: string | null
+   125→   125→  article: { id: string; name: string } | null
+   126→   126→  walletId: string
+   127→   127→  wallet: TxnWallet
+   128→   128→}
+   129→   129→interface TxnListResponse {
+   130→   130→  items: TxnRow[]
+   131→   131→  total: number
+   132→   132→  page: number
+   133→   133→  pageSize: number
+   134→   134→}
+   135→   135→
+   136→   136→interface TransactionsViewProps {
+   137→   137→  kind: TxnKind
+   138→   138→}
+   139→   139→
+   140→   140→const PAGE_SIZE = 10
+   141→   141→const ALL = 'all'
+   142→   142→
+   143→   143→// ---------------------------------------------------------------------------
+   144→   144→// Date helpers — produce YYYY-MM-DD strings the backend can parse via parseLocalDate.
+   145→   145→// ---------------------------------------------------------------------------
+   146→   146→
+   147→   147→function pad(n: number): string {
+   148→   148→  return String(n).padStart(2, '0')
+   149→   149→}
+   150→   150→
+   151→   151→function fmtDate(d: Date): string {
+   152→   152→  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+   153→   153→}
+   154→   154→
+   155→   155→function periodToRange(
+   156→   156→  period: PeriodFilter,
+   157→   157→  customFrom?: string,
+   158→   158→  customTo?: string,
+   159→   159→): { from?: string; to?: string } {
+   160→   160→  const today = new Date()
+   161→   161→  const y = today.getFullYear()
+   162→   162→  const m = today.getMonth()
+   163→   163→  const d = today.getDate()
+   164→   164→  switch (period) {
+   165→   165→    case 'today': {
+   166→   166→      const t = fmtDate(today)
+   167→   167→      return { from: t, to: t }
+   168→   168→    }
+   169→   169→    case 'this_week': {
+   170→   170→      // Monday-based week (Sunday = end of week)
+   171→   171→      const dow = today.getDay() // 0 = Sunday, 1 = Monday …
+   172→   172→      const offset = dow === 0 ? -6 : 1 - dow
+   173→   173→      const monday = new Date(y, m, d + offset)
+   174→   174→      const sunday = new Date(y, m, d + offset + 6)
+   175→   175→      return { from: fmtDate(monday), to: fmtDate(sunday) }
+   176→   176→    }
+   177→   177→    case 'this_month': {
+   178→   178→      return { from: fmtDate(new Date(y, m, 1)), to: fmtDate(new Date(y, m + 1, 0)) }
+   179→   179→    }
+   180→   180→    case 'this_year': {
+   181→   181→      return { from: `${y}-01-01`, to: `${y}-12-31` }
+   182→   182→    }
+   183→   183→    case 'all_time':
+   184→   184→      return {}
+   185→   185→    case 'custom_range':
+   186→   186→      return {
+   187→   187→        from: customFrom || undefined,
+   188→   188→        to: customTo || undefined,
+   189→   189→      }
+   190→   190→  }
+   191→   191→}
+   192→   192→
+   193→   193→function todayLocal(): string {
+   194→   194→  return toLocalDateString(new Date())
+   195→   195→}
+   196→   196→
+   197→   197→function clampPage(p: number, totalPages: number): number {
+   198→   198→  if (p < 1) return 1
+   199→   199→  if (p > totalPages) return totalPages
+   200→   200→  return p
+   201→   201→}
+   202→   202→
+   203→   203→function buildPageList(current: number, totalPages: number): (number | 'ellipsis')[] {
+   204→   204→  if (totalPages <= 7) {
+   205→   205→    return Array.from({ length: totalPages }, (_, i) => i + 1)
+   206→   206→  }
+   207→   207→  const pages: (number | 'ellipsis')[] = [1]
+   208→   208→  const left = Math.max(2, current - 1)
+   209→   209→  const right = Math.min(totalPages - 1, current + 1)
+   210→   210→  if (left > 2) pages.push('ellipsis')
+   211→   211→  for (let i = left; i <= right; i++) pages.push(i)
+   212→   212→  if (right < totalPages - 1) pages.push('ellipsis')
+   213→   213→  pages.push(totalPages)
+   214→   214→  return pages
+   215→   215→}
+   216→   216→
+   217→   217→// ---------------------------------------------------------------------------
+   218→   218→// Component
+   219→   219→// ---------------------------------------------------------------------------
+   220→   220→
+   221→   221→export function TransactionsView({ kind }: TransactionsViewProps) {
+   222→   222→  const { t, money, num, date } = useI18n()
+   223→   223→  const api = useApi()
+   224→   224→  const qc = useQueryClient()
+   225→   225→
+   226→   226→  const apiBase = kind === 'income' ? '/api/income' : '/api/expenses'
+   227→   227→  const exportUrl = kind === 'income' ? '/api/income/export' : '/api/expenses/export'
+   228→   228→  const toneTextCls = kind === 'income' ? 'text-income' : 'text-expense'
+   229→   229→  const toneBgCls = kind === 'income' ? 'bg-income/10' : 'bg-expense/10'
+   230→   230→  const walletFieldLabel =
+   231→   231→    kind === 'income' ? t('income.destinationWallet') : t('expense.sourceWallet')
+   232→   232→  const TitleIcon = kind === 'income' ? TrendingUp : TrendingDown
+   233→   233→
+   234→   234→  // ---- Filter state ----
+   235→   235→  const [search, setSearch] = useState('')
+   236→   236→  const [walletId, setWalletId] = useState('')
+   237→   237→  const [categoryId, setCategoryId] = useState('')
+   238→   238→  const [articleId, setArticleId] = useState('')
+   239→   239→  const [period, setPeriod] = useState<PeriodFilter>('this_month')
+   240→   240→  const [customFrom, setCustomFrom] = useState('')
+   241→   241→  const [customTo, setCustomTo] = useState('')
+   242→   242→  const [page, setPage] = useState(1)
+   243→   243→  const [sort, setSort] = useState<SortKey>('date_desc')
+   244→   244→
+   245→   245→  // ---- Dialog state ----
+   246→   246→  const [dialogOpen, setDialogOpen] = useState(false)
+   247→   247→  const [editing, setEditing] = useState<TxnRow | null>(null)
+   248→   248→  const [deleteTarget, setDeleteTarget] = useState<TxnRow | null>(null)
+   249→   249→
+   250→   250→  // ---- Form state ----
+   251→   251→  const [formName, setFormName] = useState('')
+   252→   252→  const [formArticleId, setFormArticleId] = useState('')
+   253→   253→  const [formCategoryId, setFormCategoryId] = useState('')
+   254→   254→  const [formAmount, setFormAmount] = useState('')
+   255→   255→  const [formWalletId, setFormWalletId] = useState('')
+   256→   256→  const [formDate, setFormDate] = useState(todayLocal())
+   257→   257→  const [formComment, setFormComment] = useState('')
+   258→   258→  const [submitting, setSubmitting] = useState(false)
+   259→   259→
+   260→   260→  // ---- Filter derivation ----
+   261→   261→  const range = useMemo(
+   262→   262→    () => periodToRange(period, customFrom, customTo),
+   263→   263→    [period, customFrom, customTo],
+   264→   264→  )
+   265→   265→
+   266→   266→  const filterParams = useMemo(
+   267→   267→    () => ({
+   268→   268→      search: search.trim() || undefined,
+   269→   269→      walletId: walletId || undefined,
+   270→   270→      categoryId: categoryId || undefined,
+   271→   271→      articleId: articleId || undefined,
+   272→   272→      from: range.from,
+   273→   273→      to: range.to,
+   274→   274→      page,
+   275→   275→      pageSize: PAGE_SIZE,
+   276→   276→      sort,
+   277→   277→    }),
+   278→   278→    [search, walletId, categoryId, articleId, range.from, range.to, page, sort],
+   279→   279→  )
+   280→   280→
+   281→   281→  // ---- Data queries ----
+   282→   282→  const listQuery = useQuery<TxnListResponse>({
+   283→   283→    queryKey: [kind, 'list', filterParams],
+   284→   284→    queryFn: () => api.get<TxnListResponse>(apiBase, { query: filterParams }),
+   285→   285→  })
+   286→   286→
+   287→   287→  const walletsQuery = useQuery<{ wallets: TxnWallet[] }>({
+   288→   288→    queryKey: ['wallets'],
+   289→   289→    queryFn: () => api.get<{ wallets: TxnWallet[] }>('/api/wallets'),
+   290→   290→  })
+   291→   291→
+   292→   292→  const categoriesQuery = useQuery<{ items: TxnCategory[] }>({
+   293→   293→    queryKey: ['categories', kind],
+   294→   294→    queryFn: () =>
+   295→   295→      api.get<{ items: TxnCategory[] }>('/api/categories', { query: { type: kind } }),
+   296→   296→  })
+   297→   297→
+   298→   298→  const articlesQuery = useQuery<{ items: TxnArticle[] }>({
+   299→   299→    queryKey: ['articles', kind],
+   300→   300→    queryFn: () =>
+   301→   301→      api.get<{ items: TxnArticle[] }>('/api/articles', { query: { type: kind } }),
+   302→   302→  })
+   303→   303→
+   304→   304→  // ---- Derived data ----
+   305→   305→  const wallets = walletsQuery.data?.wallets ?? []
+   306→   306→  const categories = categoriesQuery.data?.items ?? []
+   307→   307→  const articles = articlesQuery.data?.items ?? []
+   308→   308→  const rows = listQuery.data?.items ?? []
+   309→   309→  const total = listQuery.data?.total ?? 0
+   310→   310→  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+   311→   311→  const safePage = clampPage(page, totalPages)
+   312→   312→
+   313→   313→  // ---- Summary stats over the *current page* of items ----
+   314→   314→  // Note: backend does not return a period aggregate; we approximate by summing
+   315→   315→  // the current page items. For the "average", we divide by the page count
+   316→   316→  // (rows.length) so the displayed average matches what the user is looking at.
+   317→   317→  // This matches user expectations for the visible list.
+   318→   318→  const summary = useMemo(() => {
+   319→   319→    let totalCents = 0
+   320→   320→    for (const r of rows) totalCents += toCents(r.amount)
+   321→   321→    const count = rows.length
+   322→   322→    return {
+   323→   323→      total: fromCents(totalCents),
+   324→   324→      count,
+   325→   325→      avg: count > 0 ? fromCents(Math.round(totalCents / count)) : '0.00',
+   326→   326→    }
+   327→   327→  }, [rows])
+   328→   328→
+   329→   329→  // ---- Mutations ----
+   330→   330→  const createMutation = useMutation({
+   331→   331→    mutationFn: (body: Record<string, unknown>) => api.post(apiBase, body),
+   332→   332→    onSuccess: () => {
+   333→   333→      toast.success(t(`${kind}.created`))
+   334→   334→      qc.invalidateQueries({ queryKey: [kind] })
+   335→   335→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   336→   336→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   337→   337→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   338→   338→      setDialogOpen(false)
+   339→   339→    },
+   340→   340→  })
+   341→   341→
+   342→   342→  const updateMutation = useMutation({
+   343→   343→    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+   344→   344→      api.put(`${apiBase}/${id}`, body),
+   345→   345→    onSuccess: () => {
+   346→   346→      toast.success(t(`${kind}.updated`))
+   347→   347→      qc.invalidateQueries({ queryKey: [kind] })
+   348→   348→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   349→   349→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   350→   350→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   351→   351→      setDialogOpen(false)
+   352→   352→    },
+   353→   353→  })
+   354→   354→
+   355→   355→  const deleteMutation = useMutation({
+   356→   356→    mutationFn: (id: string) => api.del(`${apiBase}/${id}`),
+   357→   357→    onSuccess: () => {
+   358→   358→      toast.success(t(`${kind}.deleted`))
+   359→   359→      qc.invalidateQueries({ queryKey: [kind] })
+   360→   360→      qc.invalidateQueries({ queryKey: ['wallets'] })
+   361→   361→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   362→   362→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   363→   363→      setDeleteTarget(null)
+   364→   364→    },
+   365→   365→  })
+   366→   366→
+   367→   367→  // ---- Dialog handlers ----
+   368→   368→  const openCreate = () => {
+   369→   369→    setEditing(null)
+   370→   370→    setFormName('')
+   371→   371→    setFormArticleId('')
+   372→   372→    setFormCategoryId('')
+   373→   373→    setFormAmount('')
+   374→   374→    setFormWalletId(wallets[0]?.id ?? '')
+   375→   375→    setFormDate(todayLocal())
+   376→   376→    setFormComment('')
+   377→   377→    setDialogOpen(true)
+   378→   378→  }
+   379→   379→
+   380→   380→  const openEdit = (row: TxnRow) => {
+   381→   381→    setEditing(row)
+   382→   382→    setFormName(row.name)
+   383→   383→    setFormArticleId(row.articleId ?? '')
+   384→   384→    setFormCategoryId(row.categoryId ?? '')
+   385→   385→    setFormAmount(row.amount)
+   386→   386→    setFormWalletId(row.walletId)
+   387→   387→    setFormDate(
+   388→   388→      row.financialDate ? toLocalDateString(row.financialDate) : todayLocal(),
+   389→   389→    )
+   390→   390→    setFormComment(row.comment ?? '')
+   391→   391→    setDialogOpen(true)
+   392→   392→  }
+   393→   393→
+   394→   394→  const handleArticleChange = (newArticleId: string) => {
+   395→   395→    setFormArticleId(newArticleId)
+   396→   396→    const article = articles.find((a) => a.id === newArticleId)
+   397→   397→    if (article) {
+   398→   398→      if (article.defaultAmount) setFormAmount(article.defaultAmount)
+   399→   399→      if (article.defaultCategoryId) setFormCategoryId(article.defaultCategoryId)
+   400→   400→    }
+   401→   401→  }
+   402→   402→
+   403→   403→  const handleSubmit = async () => {
+   404→   404→    if (!formName.trim()) {
+   405→   405→      toast.error(`${t('common.required')}: ${t('common.name')}`)
+   406→   406→      return
+   407→   407→    }
+   408→   408→    if (!formWalletId) {
+   409→   409→      toast.error(`${t('common.required')}: ${t('common.wallet')}`)
+   410→   410→      return
+   411→   411→    }
+   412→   412→    const amt = Number(formAmount)
+   413→   413→    if (!Number.isFinite(amt) || amt <= 0) {
+   414→   414→      toast.error(`${t('common.required')}: ${t('common.amount')}`)
+   415→   415→      return
+   416→   416→    }
+   417→   417→    if (!formDate) {
+   418→   418→      toast.error(`${t('common.required')}: ${t('common.date')}`)
+   419→   419→      return
+   420→   420→    }
+   421→   421→
+   422→   422→    const body: Record<string, unknown> = {
+   423→   423→      name: formName.trim(),
+   424→   424→      amount: amt.toFixed(2),
+   425→   425→      walletId: formWalletId,
+   426→   426→      financialDate: formDate,
+   427→   427→    }
+   428→   428→    if (formArticleId) body.articleId = formArticleId
+   429→   429→    if (formCategoryId) body.categoryId = formCategoryId
+   430→   430→    if (formComment.trim()) body.comment = formComment.trim()
+   431→   431→
+   432→   432→    setSubmitting(true)
+   433→   433→    try {
+   434→   434→      if (editing) {
+   435→   435→        await updateMutation.mutateAsync({ id: editing.id, body })
+   436→   436→      } else {
+   437→   437→        await createMutation.mutateAsync(body)
+   438→   438→      }
+   439→   439→    } catch {
+   440→   440→      // useApi already toasted the error; keep dialog open so user can fix & retry.
+   441→   441→    } finally {
+   442→   442→      setSubmitting(false)
+   443→   443→    }
+   444→   444→  }
+   445→   445→
+   446→   446→  const handleDelete = async () => {
+   447→   447→    if (!deleteTarget) return
+   448→   448→    try {
+   449→   449→      await deleteMutation.mutateAsync(deleteTarget.id)
+   450→   450→    } catch {
+   451→   451→      // useApi already toasted the error.
+   452→   452→    }
+   453→   453→  }
+   454→   454→
+   455→   455→  // ---- Export CSV ----
+   456→   456→  const handleExport = () => {
+   457→   457→    const params = new URLSearchParams()
+   458→   458→    if (range.from) params.set('from', range.from)
+   459→   459→    if (range.to) params.set('to', range.to)
+   460→   460→    if (walletId) params.set('walletId', walletId)
+   461→   461→    if (categoryId) params.set('categoryId', categoryId)
+   462→   462→    if (articleId) params.set('articleId', articleId)
+   463→   463→    if (search.trim()) params.set('search', search.trim())
+   464→   464→    const qs = params.toString()
+   465→   465→    window.location.href = qs ? `${exportUrl}?${qs}` : exportUrl
+   466→   466→  }
+   467→   467→
+   468→   468→  // ---- Clear filters ----
+   469→   469→  const clearFilters = () => {
+   470→   470→    setSearch('')
+   471→   471→    setWalletId('')
+   472→   472→    setCategoryId('')
+   473→   473→    setArticleId('')
+   474→   474→    setPeriod('this_month')
+   475→   475→    setCustomFrom('')
+   476→   476→    setCustomTo('')
+   477→   477→    setSort('date_desc')
+   478→   478→    setPage(1)
+   479→   479→  }
+   480→   480→
+   481→   481→  // ---- Sort cycling ----
+   482→   482→  const cycleDateSort = () =>
+   483→   483→    setSort((s) => (s === 'date_desc' ? 'date_asc' : 'date_desc'))
+   484→   484→  const cycleAmountSort = () =>
+   485→   485→    setSort((s) => (s === 'amount_desc' ? 'amount_asc' : 'amount_desc'))
+   486→   486→
+   487→   487→  // ---- Reset to page 1 whenever filters/sort change ----
+   488→   488→  useEffect(() => {
+   489→   489→    setPage(1)
+   490→   490→  }, [search, walletId, categoryId, articleId, period, customFrom, customTo, sort])
+   491→   491→
+   492→   492→  // ---- Auto-clamp page if we drifted past the last page (e.g. after a delete) ----
+   493→   493→  useEffect(() => {
+   494→   494→    if (total > 0 && page > totalPages) {
+   495→   495→      setPage(totalPages)
+   496→   496→    }
+   497→   497→  }, [total, totalPages, page])
+   498→   498→
+   499→   499→  const loading = listQuery.isLoading
+   500→   500→  const hasWallets = wallets.length > 0
+   501→   501→  const hasActiveFilters =
+   502→   502→    !!search ||
+   503→   503→    !!walletId ||
+   504→   504→    !!categoryId ||
+   505→   505→    !!articleId ||
+   506→   506→    period !== 'this_month' ||
+   507→   507→    !!customFrom ||
+   508→   508→    !!customTo
+   509→   509→
+   510→   510→  // ---------------------------------------------------------------------------
+   511→   511→  // Render
+   512→   512→  // ---------------------------------------------------------------------------
+   513→   513→
+   514→   514→  return (
+   515→   515→    <div className="space-y-6">
+   516→   516→      <PageHeader
+   517→   517→        title={t(`${kind}.title`)}
+   518→   518→        actions={
+   519→   519→          <>
+   520→   520→            <Button
+   521→   521→              variant="outline"
+   522→   522→              onClick={handleExport}
+   523→   523→              disabled={loading || total === 0}
+   524→   524→            >
+   525→   525→              <Download className="h-4 w-4" />
+   526→   526→              <span className="hidden sm:inline">{t('common.exportCsv')}</span>
+   527→   527→            </Button>
+   528→   528→            <Button onClick={openCreate} disabled={!hasWallets}>
+   529→   529→              <Plus className="h-4 w-4" />
+   530→   530→              {t(`${kind}.add`)}
+   531→   531→            </Button>
+   532→   532→          </>
+   533→   533→        }
+   534→   534→      />
+   535→   535→
+   536→   536→      {/* Filter bar */}
+   537→   537→      <Card>
+   538→   538→        <CardContent className="p-4">
+   539→   539→          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+   540→   540→            <div className="space-y-1.5 xl:col-span-2">
+   541→   541→              <Label htmlFor="txn-search" className="text-xs text-muted-foreground">
+   542→   542→                {t('common.search')}
+   543→   543→              </Label>
+   544→   544→              <div className="relative">
+   545→   545→                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   546→   546→                <Input
+   547→   547→                  id="txn-search"
+   548→   548→                  value={search}
+   549→   549→                  onChange={(e) => setSearch(e.target.value)}
+   550→   550→                  placeholder={t('common.search')}
+   551→   551→                  className="pl-8"
+   552→   552→                />
+   553→   553→              </div>
+   554→   554→            </div>
+   555→   555→
+   556→   556→            <div className="space-y-1.5">
+   557→   557→              <Label className="text-xs text-muted-foreground">{t('common.wallet')}</Label>
+   558→   558→              <Select
+   559→   559→                value={walletId || ALL}
+   560→   560→                onValueChange={(v) => setWalletId(v === ALL ? '' : v)}
+   561→   561→              >
+   562→   562→                <SelectTrigger className="w-full">
+   563→   563→                  <SelectValue />
+   564→   564→                </SelectTrigger>
+   565→   565→                <SelectContent>
+   566→   566→                  <SelectItem value={ALL}>{t('common.all')}</SelectItem>
+   567→   567→                  {wallets.map((w) => (
+   568→   568→                    <SelectItem key={w.id} value={w.id}>
+   569→   569→                      {w.name}
+   570→   570→                    </SelectItem>
+   571→   571→                  ))}
+   572→   572→                </SelectContent>
+   573→   573→              </Select>
+   574→   574→            </div>
+   575→   575→
+   576→   576→            <div className="space-y-1.5">
+   577→   577→              <Label className="text-xs text-muted-foreground">{t('common.category')}</Label>
+   578→   578→              <Select
+   579→   579→                value={categoryId || ALL}
+   580→   580→                onValueChange={(v) => setCategoryId(v === ALL ? '' : v)}
+   581→   581→              >
+   582→   582→                <SelectTrigger className="w-full">
+   583→   583→                  <SelectValue />
+   584→   584→                </SelectTrigger>
+   585→   585→                <SelectContent>
+   586→   586→                  <SelectItem value={ALL}>{t('common.all')}</SelectItem>
+   587→   587→                  {categories.map((c) => (
+   588→   588→                    <SelectItem key={c.id} value={c.id}>
+   589→   589→                      {c.name}
+   590→   590→                    </SelectItem>
+   591→   591→                  ))}
+   592→   592→                </SelectContent>
+   593→   593→              </Select>
+   594→   594→            </div>
+   595→   595→
+   596→   596→            <div className="space-y-1.5">
+   597→   597→              <Label className="text-xs text-muted-foreground">{t('common.article')}</Label>
+   598→   598→              <Select
+   599→   599→                value={articleId || ALL}
+   600→   600→                onValueChange={(v) => setArticleId(v === ALL ? '' : v)}
+   601→   601→              >
+   602→   602→                <SelectTrigger className="w-full">
+   603→   603→                  <SelectValue />
+   604→   604→                </SelectTrigger>
+   605→   605→                <SelectContent>
+   606→   606→                  <SelectItem value={ALL}>{t('common.all')}</SelectItem>
+   607→   607→                  {articles.map((a) => (
+   608→   608→                    <SelectItem key={a.id} value={a.id}>
+   609→   609→                      {a.name}
+   610→   610→                    </SelectItem>
+   611→   611→                  ))}
+   612→   612→                </SelectContent>
+   613→   613→              </Select>
+   614→   614→            </div>
+   615→   615→
+   616→   616→            <div className="space-y-1.5">
+   617→   617→              <Label className="text-xs text-muted-foreground">{t('common.filter')}</Label>
+   618→   618→              <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
+   619→   619→                <SelectTrigger className="w-full">
+   620→   620→                  <SelectValue />
+   621→   621→                </SelectTrigger>
+   622→   622→                <SelectContent>
+   623→   623→                  <SelectItem value="today">{t('common.today')}</SelectItem>
+   624→   624→                  <SelectItem value="this_week">{t('common.thisWeek')}</SelectItem>
+   625→   625→                  <SelectItem value="this_month">{t('common.thisMonth')}</SelectItem>
+   626→   626→                  <SelectItem value="this_year">{t('common.thisYear')}</SelectItem>
+   627→   627→                  <SelectItem value="all_time">{t('common.allTime')}</SelectItem>
+   628→   628→                  <SelectItem value="custom_range">{t('common.customRange')}</SelectItem>
+   629→   629→                </SelectContent>
+   630→   630→              </Select>
+   631→   631→            </div>
+   632→   632→          </div>
+   633→   633→
+   634→   634→          {period === 'custom_range' && (
+   635→   635→            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+   636→   636→              <div className="space-y-1.5">
+   637→   637→                <Label htmlFor="txn-from" className="text-xs text-muted-foreground">
+   638→   638→                  {t('common.from')}
+   639→   639→                </Label>
+   640→   640→                <Input
+   641→   641→                  id="txn-from"
+   642→   642→                  type="date"
+   643→   643→                  value={customFrom}
+   644→   644→                  onChange={(e) => setCustomFrom(e.target.value)}
+   645→   645→                  className="w-full sm:w-44"
+   646→   646→                />
+   647→   647→              </div>
+   648→   648→              <div className="space-y-1.5">
+   649→   649→                <Label htmlFor="txn-to" className="text-xs text-muted-foreground">
+   650→   650→                  {t('common.to')}
+   651→   651→                </Label>
+   652→   652→                <Input
+   653→   653→                  id="txn-to"
+   654→   654→                  type="date"
+   655→   655→                  value={customTo}
+   656→   656→                  onChange={(e) => setCustomTo(e.target.value)}
+   657→   657→                  className="w-full sm:w-44"
+   658→   658→                />
+   659→   659→              </div>
+   660→   660→            </div>
+   661→   661→          )}
+   662→   662→
+   663→   663→          <div className="mt-3 flex items-center justify-end">
+   664→   664→            <Button
+   665→   665→              variant="ghost"
+   666→   666→              size="sm"
+   667→   667→              onClick={clearFilters}
+   668→   668→              disabled={!hasActiveFilters}
+   669→   669→            >
+   670→   670→              {t('common.clearFilters')}
+   671→   671→            </Button>
+   672→   672→          </div>
+   673→   673→        </CardContent>
+   674→   674→      </Card>
+   675→   675→
+   676→   676→      {/* Summary strip */}
+   677→   677→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+   678→   678→        <Card className={cn('overflow-hidden', toneBgCls)}>
+   679→   679→          <CardContent className="p-4">
+   680→   680→            <div className="flex items-center justify-between">
+   681→   681→              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   682→   682→                {t('tx.total')}
+   683→   683→              </p>
+   684→   684→              <TitleIcon className={cn('h-4 w-4', toneTextCls)} />
+   685→   685→            </div>
+   686→   686→            <p className={cn('mt-2 text-2xl font-bold tabular-nums', toneTextCls)}>
+   687→   687→              {money(summary.total)}
+   688→   688→            </p>
+   689→   689→          </CardContent>
+   690→   690→        </Card>
+   691→   691→        <Card>
+   692→   692→          <CardContent className="p-4">
+   693→   693→            <div className="flex items-center justify-between">
+   694→   694→              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   695→   695→                {t('tx.count')}
+   696→   696→              </p>
+   697→   697→              <Hash className="h-4 w-4 text-muted-foreground" />
+   698→   698→            </div>
+   699→   699→            <p className="mt-2 text-2xl font-bold tabular-nums">
+   700→   700→              {num(total)}
+   701→   701→            </p>
+   702→   702→            <p className="mt-1 text-xs text-muted-foreground">
+   703→   703→              {t('tx.results', { count: total })}
+   704→   704→            </p>
+   705→   705→          </CardContent>
+   706→   706→        </Card>
+   707→   707→        <Card>
+   708→   708→          <CardContent className="p-4">
+   709→   709→            <div className="flex items-center justify-between">
+   710→   710→              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   711→   711→                {t('tx.average')}
+   712→   712→              </p>
+   713→   713→              <Calculator className="h-4 w-4 text-muted-foreground" />
+   714→   714→            </div>
+   715→   715→            <p className="mt-2 text-2xl font-bold tabular-nums">
+   716→   716→              {money(summary.avg)}
+   717→   717→            </p>
+   718→   718→          </CardContent>
+   719→   719→        </Card>
+   720→   720→      </div>
+   721→   721→
+   722→   722→      {/* Transactions table */}
+   723→   723→      <Card>
+   724→   724→        <CardContent className="p-0">
+   725→   725→          {loading ? (
+   726→   726→            <div className="space-y-2 p-4">
+   727→   727→              {Array.from({ length: 6 }).map((_, i) => (
+   728→   728→                <Skeleton key={i} className="h-12 w-full" />
+   729→   729→              ))}
+   730→   730→            </div>
+   731→   731→          ) : rows.length === 0 ? (
+   732→   732→            <div className="p-6">
+   733→   733→              <EmptyState
+   734→   734→                title={t(`${kind}.empty`)}
+   735→   735→                action={
+   736→   736→                  <Button onClick={openCreate} disabled={!hasWallets}>
+   737→   737→                    <Plus className="h-4 w-4" />
+   738→   738→                    {t(`${kind}.add`)}
+   739→   739→                  </Button>
+   740→   740→                }
+   741→   741→              />
+   742→   742→              {!hasWallets && (
+   743→   743→                <p className="mt-2 text-center text-xs text-muted-foreground">
+   744→   744→                  {t('tx.noWallets')}
+   745→   745→                </p>
+   746→   746→              )}
+   747→   747→            </div>
+   748→   748→          ) : (
+   749→   749→            <ScrollArea className="max-h-[600px] scrollbar-thin">
+   750→   750→              <Table>
+   751→   751→                <TableHeader className="sticky top-0 z-10 bg-card">
+   752→   752→                  <TableRow className="hover:bg-transparent">
+   753→   753→                    <TableHead className="w-[120px] cursor-pointer select-none" onClick={cycleDateSort}>
+   754→   754→                      <span className="inline-flex items-center gap-1">
+   755→   755→                        {t('common.date')}
+   756→   756→                        {sort === 'date_desc' ? (
+   757→   757→                          <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+   758→   758→                        ) : sort === 'date_asc' ? (
+   759→   759→                          <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+   760→   760→                        ) : (
+   761→   761→                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+   762→   762→                        )}
+   763→   763→                      </span>
+   764→   764→                    </TableHead>
+   765→   765→                    <TableHead>{t('common.name')}</TableHead>
+   766→   766→                    <TableHead>{t('common.category')}</TableHead>
+   767→   767→                    <TableHead className="hidden md:table-cell">{t('common.article')}</TableHead>
+   768→   768→                    <TableHead className="hidden sm:table-cell">{t('common.wallet')}</TableHead>
+   769→   769→                    <TableHead
+   770→   770→                      className="cursor-pointer select-none text-right"
+   771→   771→                      onClick={cycleAmountSort}
+   772→   772→                    >
+   773→   773→                      <span className="inline-flex items-center gap-1">
+   774→   774→                        {t('common.amount')}
+   775→   775→                        {sort === 'amount_desc' ? (
+   776→   776→                          <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+   777→   777→                        ) : sort === 'amount_asc' ? (
+   778→   778→                          <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+   779→   779→                        ) : (
+   780→   780→                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+   781→   781→                        )}
+   782→   782→                      </span>
+   783→   783→                    </TableHead>
+   784→   784→                    <TableHead className="hidden lg:table-cell">{t('common.comment')}</TableHead>
+   785→   785→                    <TableHead className="w-[60px] text-right">{t('common.actions')}</TableHead>
+   786→   786→                  </TableRow>
+   787→   787→                </TableHeader>
+   788→   788→                <TableBody>
+   789→   789→                  {rows.map((r) => (
+   790→   790→                    <TableRow key={r.id}>
+   791→   791→                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+   792→   792→                        {date(r.financialDate)}
+   793→   793→                      </TableCell>
+   794→   794→                      <TableCell className="font-medium">{r.name}</TableCell>
+   795→   795→                      <TableCell>
+   796→   796→                        {r.category ? (
+   797→   797→                          <Badge
+   798→   798→                            variant="outline"
+   799→   799→                            style={{
+   800→   800→                              borderColor: r.category.color ?? undefined,
+   801→   801→                              color: r.category.color ?? undefined,
+   802→   802→                              backgroundColor: r.category.color
+   803→   803→                                ? `${r.category.color}15`
+   804→   804→                                : undefined,
+   805→   805→                            }}
+   806→   806→                          >
+   807→   807→                            {r.category.name}
+   808→   808→                          </Badge>
+   809→   809→                        ) : (
+   810→   810→                          <span className="text-xs text-muted-foreground">—</span>
+   811→   811→                        )}
+   812→   812→                      </TableCell>
+   813→   813→                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+   814→   814→                        {r.article?.name ?? '—'}
+   815→   815→                      </TableCell>
+   816→   816→                      <TableCell className="hidden sm:table-cell">
+   817→   817→                        <span className="inline-flex items-center gap-2 text-sm">
+   818→   818→                          <span
+   819→   819→                            className="inline-block h-2.5 w-2.5 rounded-full"
+   820→   820→                            style={{ backgroundColor: r.wallet.color ?? '#888' }}
+   821→   821→                            aria-hidden
+   822→   822→                          />
+   823→   823→                          {r.wallet.name}
+   824→   824→                        </span>
+   825→   825→                      </TableCell>
+   826→   826→                      <TableCell className="text-right">
+   827→   827→                        <MoneyText value={r.amount} tone={kind} className="text-sm" />
+   828→   828→                      </TableCell>
+   829→   829→                      <TableCell className="hidden lg:table-cell max-w-[260px]">
+   830→   830→                        <span className="line-clamp-1 text-sm text-muted-foreground">
+   831→   831→                          {r.comment ?? '—'}
+   832→   832→                        </span>
+   833→   833→                      </TableCell>
+   834→   834→                      <TableCell className="text-right">
+   835→   835→                        <DropdownMenu>
+   836→   836→                          <DropdownMenuTrigger asChild>
+   837→   837→                            <Button variant="ghost" size="icon" className="h-8 w-8">
+   838→   838→                              <MoreHorizontal className="h-4 w-4" />
+   839→   839→                              <span className="sr-only">{t('common.actions')}</span>
+   840→   840→                            </Button>
+   841→   841→                          </DropdownMenuTrigger>
+   842→   842→                          <DropdownMenuContent align="end">
+   843→   843→                            <DropdownMenuItem onClick={() => openEdit(r)}>
+   844→   844→                              <Eye className="h-4 w-4" />
+   845→   845→                              {t('common.view')}
+   846→   846→                            </DropdownMenuItem>
+   847→   847→                            <DropdownMenuItem onClick={() => openEdit(r)}>
+   848→   848→                              <Pencil className="h-4 w-4" />
+   849→   849→                              {t('common.edit')}
+   850→   850→                            </DropdownMenuItem>
+   851→   851→                            <DropdownMenuSeparator />
+   852→   852→                            <DropdownMenuItem
+   853→   853→                              className="text-destructive focus:text-destructive"
+   854→   854→                              onClick={() => setDeleteTarget(r)}
+   855→   855→                            >
+   856→   856→                              <Trash2 className="h-4 w-4" />
+   857→   857→                              {t('common.delete')}
+   858→   858→                            </DropdownMenuItem>
+   859→   859→                          </DropdownMenuContent>
+   860→   860→                        </DropdownMenu>
+   861→   861→                      </TableCell>
+   862→   862→                    </TableRow>
+   863→   863→                  ))}
+   864→   864→                </TableBody>
+   865→   865→              </Table>
+   866→   866→            </ScrollArea>
+   867→   867→          )}
+   868→   868→        </CardContent>
+   869→   869→      </Card>
+   870→   870→
+   871→   871→      {/* Pagination */}
+   872→   872→      {!loading && rows.length > 0 && (
+   873→   873→        <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+   874→   874→          <p className="text-xs text-muted-foreground">
+   875→   875→            {t('tx.pageOf', { page: safePage, total: totalPages })} ·{' '}
+   876→   876→            {t('tx.results', { count: total })}
+   877→   877→          </p>
+   878→   878→          <Pagination className="mx-0 w-auto">
+   879→   879→            <PaginationContent>
+   880→   880→              <PaginationItem>
+   881→   881→                <PaginationPrevious
+   882→   882→                  href="#"
+   883→   883→                  onClick={(e) => {
+   884→   884→                    e.preventDefault()
+   885→   885→                    setPage((p) => clampPage(p - 1, totalPages))
+   886→   886→                  }}
+   887→   887→                  aria-disabled={safePage <= 1}
+   888→   888→                  className={cn(safePage <= 1 && 'pointer-events-none opacity-50')}
+   889→   889→                />
+   890→   890→              </PaginationItem>
+   891→   891→              {buildPageList(safePage, totalPages).map((p, i) =>
+   892→   892→                p === 'ellipsis' ? (
+   893→   893→                  <PaginationItem key={`e-${i}`}>
+   894→   894→                    <PaginationEllipsis />
+   895→   895→                  </PaginationItem>
+   896→   896→                ) : (
+   897→   897→                  <PaginationItem key={p}>
+   898→   898→                    <PaginationLink
+   899→   899→                      href="#"
+   900→   900→                      isActive={p === safePage}
+   901→   901→                      onClick={(e) => {
+   902→   902→                        e.preventDefault()
+   903→   903→                        setPage(p)
+   904→   904→                      }}
+   905→   905→                    >
+   906→   906→                      {p}
+   907→   907→                    </PaginationLink>
+   908→   908→                  </PaginationItem>
+   909→   909→                ),
+   910→   910→              )}
+   911→   911→              <PaginationItem>
+   912→   912→                <PaginationNext
+   913→   913→                  href="#"
+   914→   914→                  onClick={(e) => {
+   915→   915→                    e.preventDefault()
+   916→   916→                    setPage((p) => clampPage(p + 1, totalPages))
+   917→   917→                  }}
+   918→   918→                  aria-disabled={safePage >= totalPages}
+   919→   919→                  className={cn(safePage >= totalPages && 'pointer-events-none opacity-50')}
+   920→   920→                />
+   921→   921→              </PaginationItem>
+   922→   922→            </PaginationContent>
+   923→   923→          </Pagination>
+   924→   924→        </div>
+   925→   925→      )}
+   926→   926→
+   927→   927→      {/* Create / Edit dialog */}
+   928→   928→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   929→   929→        <DialogContent className="sm:max-w-[560px]">
+   930→   930→          <DialogHeader>
+   931→   931→            <DialogTitle>
+   932→   932→              {editing ? t(`${kind}.edit`) : t(`${kind}.add`)}
+   933→   933→            </DialogTitle>
+   934→   934→            <DialogDescription>{walletFieldLabel}</DialogDescription>
+   935→   935→          </DialogHeader>
+   936→   936→
+   937→   937→          <div className="grid grid-cols-1 gap-4">
+   938→   938→            <div className="space-y-1.5">
+   939→   939→              <Label htmlFor="f-name">
+   940→   940→                {t('common.name')} <span className="text-destructive">*</span>
+   941→   941→              </Label>
+   942→   942→              <Input
+   943→   943→                id="f-name"
+   944→   944→                value={formName}
+   945→   945→                onChange={(e) => setFormName(e.target.value)}
+   946→   946→                placeholder={t('tx.namePlaceholder')}
+   947→   947→              />
+   948→   948→            </div>
+   949→   949→
+   950→   950→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   951→   951→              <div className="space-y-1.5">
+   952→   952→                <Label htmlFor="f-article">{t('common.article')}</Label>
+   953→   953→                <Select
+   954→   954→                  value={formArticleId || ALL}
+   955→   955→                  onValueChange={(v) => handleArticleChange(v === ALL ? '' : v)}
+   956→   956→                >
+   957→   957→                  <SelectTrigger id="f-article" className="w-full">
+   958→   958→                    <SelectValue />
+   959→   959→                  </SelectTrigger>
+   960→   960→                  <SelectContent>
+   961→   961→                    <SelectItem value={ALL}>{t('common.none')}</SelectItem>
+   962→   962→                    {articles.map((a) => (
+   963→   963→                      <SelectItem key={a.id} value={a.id}>
+   964→   964→                        {a.name}
+   965→   965→                      </SelectItem>
+   966→   966→                    ))}
+   967→   967→                  </SelectContent>
+   968→   968→                </Select>
+   969→   969→              </div>
+   970→   970→
+   971→   971→              <div className="space-y-1.5">
+   972→   972→                <Label htmlFor="f-category">{t('common.category')}</Label>
+   973→   973→                <Select
+   974→   974→                  value={formCategoryId || ALL}
+   975→   975→                  onValueChange={(v) => setFormCategoryId(v === ALL ? '' : v)}
+   976→   976→                >
+   977→   977→                  <SelectTrigger id="f-category" className="w-full">
+   978→   978→                    <SelectValue />
+   979→   979→                  </SelectTrigger>
+   980→   980→                  <SelectContent>
+   981→   981→                    <SelectItem value={ALL}>{t('common.none')}</SelectItem>
+   982→   982→                    {categories.map((c) => (
+   983→   983→                      <SelectItem key={c.id} value={c.id}>
+   984→   984→                        {c.name}
+   985→   985→                      </SelectItem>
+   986→   986→                    ))}
+   987→   987→                  </SelectContent>
+   988→   988→                </Select>
+   989→   989→              </div>
+   990→   990→            </div>
+   991→   991→
+   992→   992→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   993→   993→              <div className="space-y-1.5">
+   994→   994→                <Label htmlFor="f-amount">
+   995→   995→                  {t('common.amount')} <span className="text-destructive">*</span>
+   996→   996→                </Label>
+   997→   997→                <Input
+   998→   998→                  id="f-amount"
+   999→   999→                  type="number"
+  1000→  1000→                  step="0.01"
+  1001→  1001→                  min="0"
+  1002→  1002→                  inputMode="decimal"
+  1003→  1003→                  value={formAmount}
+  1004→  1004→                  onChange={(e) => setFormAmount(e.target.value)}
+  1005→  1005→                  placeholder={t('tx.amountPlaceholder')}
+  1006→  1006→                />
+  1007→  1007→              </div>
+  1008→  1008→
+  1009→  1009→              <div className="space-y-1.5">
+  1010→  1010→                <Label htmlFor="f-date">
+  1011→  1011→                  {t(`${kind}.financialDate`)} <span className="text-destructive">*</span>
+  1012→  1012→                </Label>
+  1013→  1013→                <Input
+  1014→  1014→                  id="f-date"
+  1015→  1015→                  type="date"
+  1016→  1016→                  value={formDate}
+  1017→  1017→                  onChange={(e) => setFormDate(e.target.value)}
+  1018→  1018→                />
+  1019→  1019→              </div>
+  1020→  1020→            </div>
+  1021→  1021→
+  1022→  1022→            <div className="space-y-1.5">
+  1023→  1023→              <Label htmlFor="f-wallet">
+  1024→  1024→                {t('common.wallet')} <span className="text-destructive">*</span>
+  1025→  1025→              </Label>
+  1026→  1026→              <Select value={formWalletId} onValueChange={setFormWalletId}>
+  1027→  1027→                <SelectTrigger id="f-wallet" className="w-full">
+  1028→  1028→                  <SelectValue placeholder={t('common.wallet')} />
+  1029→  1029→                </SelectTrigger>
+  1030→  1030→                <SelectContent>
+  1031→  1031→                  {wallets.map((w) => (
+  1032→  1032→                    <SelectItem key={w.id} value={w.id}>
+  1033→  1033→                      <span className="inline-flex items-center gap-2">
+  1034→  1034→                        <span
+  1035→  1035→                          className="inline-block h-2.5 w-2.5 rounded-full"
+  1036→  1036→                          style={{ backgroundColor: w.color ?? '#888' }}
+  1037→  1037→                          aria-hidden
+  1038→  1038→                        />
+  1039→  1039→                        {w.name}
+  1040→  1040→                      </span>
+  1041→  1041→                    </SelectItem>
+  1042→  1042→                  ))}
+  1043→  1043→                </SelectContent>
+  1044→  1044→              </Select>
+  1045→  1045→            </div>
+  1046→  1046→
+  1047→  1047→            <div className="space-y-1.5">
+  1048→  1048→              <Label htmlFor="f-comment">{t('common.comment')}</Label>
+  1049→  1049→              <Textarea
+  1050→  1050→                id="f-comment"
+  1051→  1051→                value={formComment}
+  1052→  1052→                onChange={(e) => setFormComment(e.target.value)}
+  1053→  1053→                placeholder={t('tx.commentPlaceholder')}
+  1054→  1054→                rows={3}
+  1055→  1055→              />
+  1056→  1056→            </div>
+  1057→  1057→          </div>
+  1058→  1058→
+  1059→  1059→          <DialogFooter>
+  1060→  1060→            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
+  1061→  1061→              {t('common.cancel')}
+  1062→  1062→            </Button>
+  1063→  1063→            <Button
+  1064→  1064→              onClick={handleSubmit}
+  1065→  1065→              disabled={submitting || !hasWallets}
+  1066→  1066→            >
+  1067→  1067→              {submitting ? t('common.loading') : editing ? t('common.save') : t('common.create')}
+  1068→  1068→            </Button>
+  1069→  1069→          </DialogFooter>
+  1070→  1070→        </DialogContent>
+  1071→  1071→      </Dialog>
+  1072→  1072→
+  1073→  1073→      {/* Delete confirmation */}
+  1074→  1074→      <ConfirmDialog
+  1075→  1075→        open={!!deleteTarget}
+  1076→  1076→        onOpenChange={(v) => !v && setDeleteTarget(null)}
+  1077→  1077→        title={t('common.delete')}
+  1078→  1078→        description={t('tx.deleteConfirm')}
+  1079→  1079→        confirmLabel={t('common.delete')}
+  1080→  1080→        cancelLabel={t('common.cancel')}
+  1081→  1081→        destructive
+  1082→  1082→        onConfirm={handleDelete}
+  1083→  1083→      />
+  1084→  1084→    </div>
+  1085→  1085→  )
+  1086→  1086→}
+  1087→  1087→

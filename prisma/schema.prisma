@@ -1,0 +1,483 @@
+// Prisma schema for Personal Finance Manager
+// SQLite provider (dev). For production PostgreSQL, change provider to "postgresql"
+// and use Decimal/NUMERIC columns (Prisma Decimal works for both).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Authentication & user
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  passwordHash   String
+  language       String   @default("en") // "en" | "fr"
+  theme          String   @default("light") // "light" | "dark"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sessions       Session[]
+  incomes        IncomeTransaction[]
+  expenses       ExpenseTransaction[]
+  wallets        Wallet[]
+  categories     Category[]
+  articles       Article[]
+  transfers      WalletTransfer[]
+  withdrawals    CashWithdrawal[]
+  adjustments    WalletAdjustment[]
+  allocations    Allocation[]
+  bankCredits    BankCredit[]
+  creditPayments CreditRepayment[]
+  personalLoans  PersonalLoan[]
+  loanOperations PersonalLoanOperation[]
+  goals          Goal[]
+  goalCategories GoalCategory[]
+  auditLogs      AuditLog[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Application settings (single row, keyed by id = "singleton")
+// ---------------------------------------------------------------------------
+
+model AppSettings {
+  id                    String  @id @default("singleton")
+  appName               String  @default("Personal Finance Manager")
+  appNameFr             String  @default("Gestionnaire de Finances Personnelles")
+  defaultCurrency       String  @default("MAD")
+  defaultTimezone       String  @default("Africa/Casablanca")
+  referenceMonthlyIncome String  @default("25000") // stored as string for decimal precision
+  allocationUnitValue   String  @default("500")
+  allowOverdraft        Boolean @default(false)
+  updatedAt             DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Wallets & ledger (authoritative source of balances)
+// ---------------------------------------------------------------------------
+
+model Wallet {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  type          String   @default("bank") // bank | cash | savings | other
+  color         String   @default("#2563eb")
+  description   String?
+  initialBalance String  @default("0") // decimal as string
+  allowOverdraft Boolean  @default(false)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ledgerEntries WalletLedgerEntry[]
+  incomesSrc    IncomeTransaction[]  @relation("IncomeDestinationWallet")
+  expensesSrc   ExpenseTransaction[] @relation("ExpenseSourceWallet")
+  transferSources  WalletTransfer[]  @relation("TransferSource")
+  transferDests    WalletTransfer[]  @relation("TransferDest")
+  withdrawalSources CashWithdrawal[] @relation("WithdrawalSource")
+  withdrawalDests   CashWithdrawal[] @relation("WithdrawalDest")
+  adjustments       WalletAdjustment[] @relation("AdjustmentWallet")
+
+  @@index([userId])
+}
+
+model WalletLedgerEntry {
+  id              String   @id @default(cuid())
+  userId          String
+  walletId        String
+  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  // signed amount: positive = credit (in), negative = debit (out)
+  amount          String
+  operationType   String   // income | expense | transfer_in | transfer_out | withdrawal_external | withdrawal_internal | adjustment
+  direction       String   // credit | debit
+  referenceType   String?  // income | expense | transfer | withdrawal | adjustment
+  referenceId     String?  // id of the related operation
+  financialDate   DateTime
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([financialDate])
+  @@index([referenceType, referenceId])
+}
+
+// ---------------------------------------------------------------------------
+// Transfers (atomic, two linked ledger entries)
+// ---------------------------------------------------------------------------
+
+model WalletTransfer {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceWalletId  String
+  sourceWallet    Wallet   @relation("TransferSource", fields: [sourceWalletId], references: [id])
+  destWalletId    String
+  destWallet      Wallet   @relation("TransferDest", fields: [destWalletId], references: [id])
+  amount          String
+  financialDate   DateTime
+  comment         String?
+  idempotencyKey  String?  @unique
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([sourceWalletId])
+  @@index([destWalletId])
+}
+
+// ---------------------------------------------------------------------------
+// Cash withdrawals
+// ---------------------------------------------------------------------------
+
+model CashWithdrawal {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceWalletId  String
+  sourceWallet    Wallet   @relation("WithdrawalSource", fields: [sourceWalletId], references: [id])
+  destWalletId    String?  // null = external untracked cash
+  destWallet      Wallet?  @relation("WithdrawalDest", fields: [destWalletId], references: [id])
+  withdrawalType  String   // external | internal
+  amount          String
+  financialDate   DateTime
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([sourceWalletId])
+}
+
+// ---------------------------------------------------------------------------
+// Manual wallet adjustments
+// ---------------------------------------------------------------------------
+
+model WalletAdjustment {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId      String
+  wallet        Wallet   @relation("AdjustmentWallet", fields: [walletId], references: [id])
+  // adjustment amount applied to ledger (can be negative)
+  adjustment    String
+  // the actual balance the user observed (for audit)
+  actualBalance String?
+  systemBalance String?
+  financialDate DateTime
+  reason        String
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([walletId])
+}
+
+// ---------------------------------------------------------------------------
+// Categories & Articles
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  type        String   // income | expense
+  color       String   @default("#64748b")
+  description String?
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  incomes     IncomeTransaction[]
+  expenses    ExpenseTransaction[]
+  allocations Allocation[]
+  articleDefaults Article[]
+
+  @@index([userId, type])
+}
+
+model Article {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  type             String   // income | expense
+  description      String?
+  defaultAmount    String   @default("0")
+  defaultCategoryId String?
+  defaultCategory  Category? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  incomes     IncomeTransaction[]
+  expenses    ExpenseTransaction[]
+
+  @@index([userId, type])
+}
+
+// ---------------------------------------------------------------------------
+// Income & Expense transactions (reference the ledger)
+// ---------------------------------------------------------------------------
+
+model IncomeTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  categoryId    String?
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  articleId     String?
+  article       Article?  @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  amount        String
+  walletId      String
+  wallet        Wallet    @relation("IncomeDestinationWallet", fields: [walletId], references: [id])
+  ledgerEntryId String?   // the credit ledger entry
+  financialDate DateTime
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([financialDate])
+  @@index([categoryId])
+  @@index([articleId])
+  @@index([walletId])
+}
+
+model ExpenseTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  categoryId    String?
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  articleId     String?
+  article       Article?  @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  amount        String
+  walletId      String
+  wallet        Wallet    @relation("ExpenseSourceWallet", fields: [walletId], references: [id])
+  ledgerEntryId String?
+  financialDate DateTime
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([financialDate])
+  @@index([categoryId])
+  @@index([articleId])
+  @@index([walletId])
+}
+
+// ---------------------------------------------------------------------------
+// Assets & Liabilities allocation (planning records, separate from wallets)
+// ---------------------------------------------------------------------------
+
+model Allocation {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  allocType      String   // active | passive
+  classification String   // credit | monthly_expense | completed | other
+  amount         String
+  color          String   @default("#64748b")
+  bankCreditId   String?
+  bankCredit     BankCredit? @relation(fields: [bankCreditId], references: [id], onDelete: SetNull)
+  // manual progress percentage 0-100 (used when not credit-linked)
+  progress       Int      @default(0)
+  status         String   @default("active") // active | completed | on_hold
+  comment        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId     String?
+
+  @@index([userId])
+  @@index([allocType])
+  @@index([classification])
+}
+
+// ---------------------------------------------------------------------------
+// Bank credits (loans, separate from wallet accounting)
+// ---------------------------------------------------------------------------
+
+model BankCredit {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditName       String
+  lender           String
+  originalPrincipal String
+  durationMonths   Int
+  startDate        DateTime
+  monthlyInstallment String
+  interestRate     String?  // optional
+  fees             String?  // optional
+  paymentDay       Int      @default(1)
+  description      String?
+  status           String   @default("active") // active | completed | on_hold
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  installments     CreditInstallment[]
+  repayments       CreditRepayment[]
+  allocations      Allocation[]
+
+  @@index([userId])
+}
+
+model CreditInstallment {
+  id           String   @id @default(cuid())
+  bankCreditId String
+  bankCredit   BankCredit @relation(fields: [bankCreditId], references: [id], onDelete: Cascade)
+  installmentNumber Int
+  dueDate      DateTime
+  amount       String
+  status       String   @default("pending") // pending | paid | overdue
+  createdAt    DateTime @default(now())
+
+  @@index([bankCreditId])
+  @@index([dueDate])
+}
+
+model CreditRepayment {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankCreditId  String
+  bankCredit    BankCredit @relation(fields: [bankCreditId], references: [id], onDelete: Cascade)
+  amount        String
+  paymentDate   DateTime
+  comment       String?
+  walletId      String?  // optional wallet association (display only; ledger handled separately)
+  // linked expense id, to prevent double-counting in analytics
+  linkedExpenseId String?
+  createdAt      DateTime @default(now())
+
+  @@index([bankCreditId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Personal loans (money lent to others)
+// ---------------------------------------------------------------------------
+
+model PersonalLoan {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  borrowerName      String
+  description       String?
+  originalAmount    String   @default("0")
+  loanDate          DateTime
+  expectedRepayDate DateTime?
+  comment           String?
+  status            String   @default("active") // active | settled | cancelled
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  operations        PersonalLoanOperation[]
+
+  @@index([userId])
+}
+
+model PersonalLoanOperation {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personalLoanId String
+  personalLoan PersonalLoan @relation(fields: [personalLoanId], references: [id], onDelete: Cascade)
+  operationType String  // disbursement | repayment | additional | correction
+  amount       String
+  operationDate DateTime
+  comment      String?
+  walletId     String?  // optional wallet association (display only)
+  linkedExpenseId String?
+  createdAt    DateTime @default(now())
+
+  @@index([personalLoanId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------------------
+
+model GoalCategory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#64748b")
+  createdAt DateTime @default(now())
+
+  goals     Goal[]
+
+  @@index([userId])
+}
+
+model Goal {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year          Int
+  title         String
+  description   String?
+  priority      Int      @default(3) // 1 (highest) - 5 (lowest)
+  progress      Int      @default(0) // 0-100
+  status        String   @default("not_started") // not_started | in_progress | completed | on_hold | cancelled
+  targetDate    DateTime?
+  requiredBudget String?
+  savedBudget   String?
+  note          String?
+  goalCategoryId String?
+  goalCategory  GoalCategory? @relation(fields: [goalCategoryId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, year])
+  @@index([status])
+  @@index([goalCategoryId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entityType   String
+  entityId     String
+  operation    String   // create | update | delete | reverse
+  previousValues String? // JSON string
+  newValues      String? // JSON string
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}

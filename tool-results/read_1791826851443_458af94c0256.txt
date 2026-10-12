@@ -1,0 +1,1406 @@
+     1→'use client'
+     2→
+     3→import { useMemo, useState } from 'react'
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→import { toast } from 'sonner'
+     6→import {
+     7→  ResponsiveContainer,
+     8→  BarChart,
+     9→  Bar,
+    10→  Cell,
+    11→  XAxis,
+    12→  YAxis,
+    13→  CartesianGrid,
+    14→  Tooltip as RechartsTooltip,
+    15→} from 'recharts'
+    16→import {
+    17→  Plus,
+    18→  Pencil,
+    19→  Trash2,
+    20→  MoreHorizontal,
+    21→  Search,
+    22→  Download,
+    23→  Target,
+    24→  CheckCircle2,
+    25→  CircleDollarSign,
+    26→  Gauge,
+    27→  Wallet,
+    28→  PiggyBank,
+    29→  CalendarClock,
+    30→  ChevronLeft,
+    31→  ChevronRight,
+    32→  Tag,
+    33→  X,
+    34→} from 'lucide-react'
+    35→
+    36→import { useI18n } from '@/lib/use-i18n'
+    37→import { useApi } from '@/lib/use-api'
+    38→import { cn } from '@/lib/utils'
+    39→
+    40→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    41→import { Button } from '@/components/ui/button'
+    42→import { Input } from '@/components/ui/input'
+    43→import { Label } from '@/components/ui/label'
+    44→import { Textarea } from '@/components/ui/textarea'
+    45→import { Badge } from '@/components/ui/badge'
+    46→import { Skeleton } from '@/components/ui/skeleton'
+    47→import { Progress } from '@/components/ui/progress'
+    48→import { ScrollArea } from '@/components/ui/scroll-area'
+    49→import {
+    50→  Select,
+    51→  SelectContent,
+    52→  SelectItem,
+    53→  SelectTrigger,
+    54→  SelectValue,
+    55→} from '@/components/ui/select'
+    56→import {
+    57→  Dialog,
+    58→  DialogContent,
+    59→  DialogDescription,
+    60→  DialogFooter,
+    61→  DialogHeader,
+    62→  DialogTitle,
+    63→} from '@/components/ui/dialog'
+    64→import {
+    65→  DropdownMenu,
+    66→  DropdownMenuContent,
+    67→  DropdownMenuItem,
+    68→  DropdownMenuSeparator,
+    69→  DropdownMenuTrigger,
+    70→} from '@/components/ui/dropdown-menu'
+    71→
+    72→import { StatCard, EmptyState, MoneyText, PageHeader } from '@/components/shared'
+    73→import { ConfirmDialog } from '@/components/confirm-dialog'
+    74→
+    75→// ---------------------------------------------------------------------------
+    76→// Types
+    77→// ---------------------------------------------------------------------------
+    78→
+    79→type GoalStatus = 'not_started' | 'in_progress' | 'completed' | 'on_hold' | 'cancelled'
+    80→
+    81→interface GoalCategory {
+    82→  id: string
+    83→  name: string
+    84→  color: string | null
+    85→}
+    86→
+    87→interface GoalCategoryWithCount extends GoalCategory {
+    88→  _count?: { goals?: number }
+    89→}
+    90→
+    91→interface Goal {
+    92→  id: string
+    93→  year: number
+    94→  title: string
+    95→  description: string | null
+    96→  priority: number
+    97→  progress: number
+    98→  status: GoalStatus
+    99→  targetDate: string | null
+   100→  requiredBudget: string | null
+   101→  savedBudget: string | null
+   102→  remainingBudget: string
+   103→  note: string | null
+   104→  goalCategoryId: string | null
+   105→  goalCategory: GoalCategory | null
+   106→  createdAt: string
+   107→  updatedAt: string
+   108→}
+   109→
+   110→interface CategorySummary {
+   111→  id: string
+   112→  name: string
+   113→  color: string
+   114→  count: number
+   115→  required: string
+   116→  saved: string
+   117→}
+   118→
+   119→interface GoalSummary {
+   120→  totalGoals: number
+   121→  completedGoals: number
+   122→  inProgressGoals: number
+   123→  overallProgress: number
+   124→  requiredTotal: string
+   125→  savedTotal: string
+   126→  remainingTotal: string
+   127→  byCategory: CategorySummary[]
+   128→}
+   129→
+   130→interface GoalsListResponse {
+   131→  items: Goal[]
+   132→  total: number
+   133→  page: number
+   134→  pageSize: number
+   135→  summary: GoalSummary
+   136→}
+   137→
+   138→interface GoalCategoriesResponse {
+   139→  items: GoalCategoryWithCount[]
+   140→}
+   141→
+   142→// ---------------------------------------------------------------------------
+   143→// Constants
+   144→// ---------------------------------------------------------------------------
+   145→
+   146→const DEFAULT_COLOR = '#64748b'
+   147→const ALL_SENTINEL = '__all__'
+   148→const NONE_SENTINEL = '__none__'
+   149→const PAGE_SIZE = 100
+   150→
+   151→const STATUSES: GoalStatus[] = [
+   152→  'not_started',
+   153→  'in_progress',
+   154→  'completed',
+   155→  'on_hold',
+   156→  'cancelled',
+   157→]
+   158→const PRIORITIES = [1, 2, 3, 4, 5] as const
+   159→
+   160→function isGoalStatus(v: string): v is GoalStatus {
+   161→  return (
+   162→    v === 'not_started' ||
+   163→    v === 'in_progress' ||
+   164→    v === 'completed' ||
+   165→    v === 'on_hold' ||
+   166→    v === 'cancelled'
+   167→  )
+   168→}
+   169→
+   170→// ---------------------------------------------------------------------------
+   171→// Chart tooltip
+   172→// ---------------------------------------------------------------------------
+   173→
+   174→function CountTooltip({
+   175→  active,
+   176→  payload,
+   177→  label,
+   178→  countLabel,
+   179→  num,
+   180→}: {
+   181→  active?: boolean
+   182→  payload?: { value?: number; color?: string }[]
+   183→  label?: string | number
+   184→  countLabel: string
+   185→  num: (v: number) => string
+   186→}) {
+   187→  if (!active || !payload || payload.length === 0) return null
+   188→  return (
+   189→    <div className="rounded-md border bg-popover p-3 text-xs shadow-md">
+   190→      {label !== undefined && label !== '' && (
+   191→        <p className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
+   192→          <span
+   193→            className="inline-block h-2.5 w-2.5 rounded-full"
+   194→            style={{ backgroundColor: payload[0]?.color || DEFAULT_COLOR }}
+   195→          />
+   196→          {label}
+   197→        </p>
+   198→      )}
+   199→      <p className="tabular-nums text-muted-foreground">
+   200→        {countLabel}:{' '}
+   201→        <span className="font-medium text-foreground">
+   202→          {num(Number(payload[0]?.value ?? 0))}
+   203→        </span>
+   204→      </p>
+   205→    </div>
+   206→  )
+   207→}
+   208→
+   209→// ---------------------------------------------------------------------------
+   210→// Component
+   211→// ---------------------------------------------------------------------------
+   212→
+   213→export function GoalsView() {
+   214→  const { t, money, num, date } = useI18n()
+   215→  const api = useApi()
+   216→  const qc = useQueryClient()
+   217→
+   218→  // ---- Year selector ----
+   219→  const currentYear = new Date().getFullYear()
+   220→  const yearOptions = useMemo(() => {
+   221→    const arr: number[] = []
+   222→    for (let y = currentYear - 5; y <= currentYear + 5; y++) arr.push(y)
+   223→    return arr
+   224→  }, [currentYear])
+   225→  const [year, setYear] = useState<number>(currentYear)
+   226→
+   227→  // ---- Filters ----
+   228→  const [filterStatus, setFilterStatus] = useState<string>(ALL_SENTINEL)
+   229→  const [filterCategoryId, setFilterCategoryId] = useState<string>(ALL_SENTINEL)
+   230→  const [filterPriority, setFilterPriority] = useState<string>(ALL_SENTINEL)
+   231→  const [search, setSearch] = useState('')
+   232→  const [page, setPage] = useState(1)
+   233→
+   234→  const queryFilters = useMemo(
+   235→    () => ({
+   236→      year: String(year),
+   237→      status: filterStatus !== ALL_SENTINEL ? filterStatus : undefined,
+   238→      goalCategoryId: filterCategoryId !== ALL_SENTINEL ? filterCategoryId : undefined,
+   239→      priority: filterPriority !== ALL_SENTINEL ? filterPriority : undefined,
+   240→      search: search.trim() || undefined,
+   241→      page: String(page),
+   242→      pageSize: String(PAGE_SIZE),
+   243→    }),
+   244→    [year, filterStatus, filterCategoryId, filterPriority, search, page],
+   245→  )
+   246→
+   247→  const hasFilters =
+   248→    filterStatus !== ALL_SENTINEL ||
+   249→    filterCategoryId !== ALL_SENTINEL ||
+   250→    filterPriority !== ALL_SENTINEL ||
+   251→    search.trim() !== ''
+   252→
+   253→  // ---- Goals list ----
+   254→  const goalsQuery = useQuery<GoalsListResponse>({
+   255→    queryKey: ['goals', year, filterStatus, filterCategoryId, filterPriority, search, page],
+   256→    queryFn: () => api.get<GoalsListResponse>('/api/goals', { query: queryFilters }),
+   257→  })
+   258→
+   259→  const items = goalsQuery.data?.items ?? []
+   260→  const summary: GoalSummary = goalsQuery.data?.summary ?? {
+   261→    totalGoals: 0,
+   262→    completedGoals: 0,
+   263→    inProgressGoals: 0,
+   264→    overallProgress: 0,
+   265→    requiredTotal: '0',
+   266→    savedTotal: '0',
+   267→    remainingTotal: '0',
+   268→    byCategory: [],
+   269→  }
+   270→  const loading = goalsQuery.isLoading
+   271→
+   272→  // ---- Goal categories ----
+   273→  const catsQuery = useQuery<GoalCategoriesResponse>({
+   274→    queryKey: ['goal-categories'],
+   275→    queryFn: () => api.get<GoalCategoriesResponse>('/api/goal-categories'),
+   276→  })
+   277→  const categories = catsQuery.data?.items ?? []
+   278→
+   279→  // ---- Create / edit dialog state ----
+   280→  const [dialogOpen, setDialogOpen] = useState(false)
+   281→  const [editing, setEditing] = useState<Goal | null>(null)
+   282→  const [submitting, setSubmitting] = useState(false)
+   283→
+   284→  const [formYear, setFormYear] = useState<string>(String(currentYear))
+   285→  const [formTitle, setFormTitle] = useState('')
+   286→  const [formDescription, setFormDescription] = useState('')
+   287→  const [formCategoryId, setFormCategoryId] = useState<string>(NONE_SENTINEL)
+   288→  const [formPriority, setFormPriority] = useState<string>('3')
+   289→  const [formProgress, setFormProgress] = useState<string>('0')
+   290→  const [formStatus, setFormStatus] = useState<GoalStatus>('not_started')
+   291→  const [formTargetDate, setFormTargetDate] = useState<string>('')
+   292→  const [formRequiredBudget, setFormRequiredBudget] = useState<string>('')
+   293→  const [formSavedBudget, setFormSavedBudget] = useState<string>('')
+   294→  const [formNote, setFormNote] = useState('')
+   295→
+   296→  // ---- Inline "add new category" sub-dialog ----
+   297→  const [addCatOpen, setAddCatOpen] = useState(false)
+   298→  const [newCatName, setNewCatName] = useState('')
+   299→  const [newCatColor, setNewCatColor] = useState(DEFAULT_COLOR)
+   300→  const [addCatSubmitting, setAddCatSubmitting] = useState(false)
+   301→
+   302→  // ---- Manage categories dialog ----
+   303→  const [manageCatsOpen, setManageCatsOpen] = useState(false)
+   304→  const [editCatTarget, setEditCatTarget] = useState<GoalCategoryWithCount | null>(null)
+   305→  const [editCatName, setEditCatName] = useState('')
+   306→  const [editCatColor, setEditCatColor] = useState(DEFAULT_COLOR)
+   307→  const [catSubmitting, setCatSubmitting] = useState(false)
+   308→  const [deleteCatTarget, setDeleteCatTarget] = useState<GoalCategoryWithCount | null>(null)
+   309→
+   310→  // ---- Delete goal confirmation ----
+   311→  const [deleteTarget, setDeleteTarget] = useState<Goal | null>(null)
+   312→
+   313→  // ---------------------------------------------------------------------------
+   314→  // Mutations: goals
+   315→  // ---------------------------------------------------------------------------
+   316→
+   317→  const createMutation = useMutation({
+   318→    mutationFn: (body: Record<string, unknown>) => api.post('/api/goals', body),
+   319→    onSuccess: () => {
+   320→      toast.success(t('goal.created'))
+   321→      qc.invalidateQueries({ queryKey: ['goals'] })
+   322→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   323→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   324→      setDialogOpen(false)
+   325→    },
+   326→  })
+   327→
+   328→  const updateMutation = useMutation({
+   329→    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+   330→      api.put(`/api/goals/${id}`, body),
+   331→    onSuccess: () => {
+   332→      toast.success(t('goal.updated'))
+   333→      qc.invalidateQueries({ queryKey: ['goals'] })
+   334→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   335→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   336→      setDialogOpen(false)
+   337→    },
+   338→  })
+   339→
+   340→  const deleteMutation = useMutation({
+   341→    mutationFn: (id: string) => api.del(`/api/goals/${id}`),
+   342→    onSuccess: () => {
+   343→      toast.success(t('common.delete'))
+   344→      qc.invalidateQueries({ queryKey: ['goals'] })
+   345→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   346→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   347→      setDeleteTarget(null)
+   348→    },
+   349→  })
+   350→
+   351→  // ---------------------------------------------------------------------------
+   352→  // Mutations: goal categories
+   353→  // ---------------------------------------------------------------------------
+   354→
+   355→  const createCatMutation = useMutation({
+   356→    mutationFn: (body: Record<string, unknown>) =>
+   357→      api.post<GoalCategory>('/api/goal-categories', body),
+   358→    onSuccess: (created: GoalCategory) => {
+   359→      toast.success(t('cat.created'))
+   360→      qc.invalidateQueries({ queryKey: ['goal-categories'] })
+   361→      qc.invalidateQueries({ queryKey: ['goals'] })
+   362→      setFormCategoryId(created.id)
+   363→      setAddCatOpen(false)
+   364→      setNewCatName('')
+   365→      setNewCatColor(DEFAULT_COLOR)
+   366→    },
+   367→  })
+   368→
+   369→  const updateCatMutation = useMutation({
+   370→    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+   371→      api.put(`/api/goal-categories/${id}`, body),
+   372→    onSuccess: () => {
+   373→      toast.success(t('cat.updated'))
+   374→      qc.invalidateQueries({ queryKey: ['goal-categories'] })
+   375→      qc.invalidateQueries({ queryKey: ['goals'] })
+   376→      setEditCatTarget(null)
+   377→    },
+   378→  })
+   379→
+   380→  const deleteCatMutation = useMutation({
+   381→    mutationFn: (id: string) => api.del(`/api/goal-categories/${id}`),
+   382→    onSuccess: () => {
+   383→      toast.success(t('common.delete'))
+   384→      qc.invalidateQueries({ queryKey: ['goal-categories'] })
+   385→      qc.invalidateQueries({ queryKey: ['goals'] })
+   386→      setDeleteCatTarget(null)
+   387→    },
+   388→  })
+   389→
+   390→  // ---------------------------------------------------------------------------
+   391→  // Handlers
+   392→  // ---------------------------------------------------------------------------
+   393→
+   394→  const openCreate = () => {
+   395→    setEditing(null)
+   396→    setFormYear(String(year))
+   397→    setFormTitle('')
+   398→    setFormDescription('')
+   399→    setFormCategoryId(NONE_SENTINEL)
+   400→    setFormPriority('3')
+   401→    setFormProgress('0')
+   402→    setFormStatus('not_started')
+   403→    setFormTargetDate('')
+   404→    setFormRequiredBudget('')
+   405→    setFormSavedBudget('')
+   406→    setFormNote('')
+   407→    setDialogOpen(true)
+   408→  }
+   409→
+   410→  const openEdit = (g: Goal) => {
+   411→    setEditing(g)
+   412→    setFormYear(String(g.year))
+   413→    setFormTitle(g.title)
+   414→    setFormDescription(g.description ?? '')
+   415→    setFormCategoryId(g.goalCategoryId ?? NONE_SENTINEL)
+   416→    setFormPriority(String(g.priority))
+   417→    setFormProgress(String(g.progress ?? 0))
+   418→    setFormStatus(isGoalStatus(g.status) ? g.status : 'not_started')
+   419→    setFormTargetDate(g.targetDate ? String(g.targetDate).slice(0, 10) : '')
+   420→    setFormRequiredBudget(g.requiredBudget ?? '')
+   421→    setFormSavedBudget(g.savedBudget ?? '')
+   422→    setFormNote(g.note ?? '')
+   423→    setDialogOpen(true)
+   424→  }
+   425→
+   426→  const clearFilters = () => {
+   427→    setFilterStatus(ALL_SENTINEL)
+   428→    setFilterCategoryId(ALL_SENTINEL)
+   429→    setFilterPriority(ALL_SENTINEL)
+   430→    setSearch('')
+   431→    setPage(1)
+   432→  }
+   433→
+   434→  const handleExport = () => {
+   435→    const params = new URLSearchParams()
+   436→    params.set('year', String(year))
+   437→    window.location.href = `/api/goals/export?${params.toString()}`
+   438→  }
+   439→
+   440→  const handleSubmit = async () => {
+   441→    if (!formTitle.trim()) {
+   442→      toast.error(`${t('common.required')}: ${t('common.name')}`)
+   443→      return
+   444→    }
+   445→    const yNum = Number(formYear)
+   446→    if (!Number.isFinite(yNum) || yNum < 2000 || yNum > 2200) {
+   447→      toast.error(`${t('common.required')}: ${t('common.year')}`)
+   448→      return
+   449→    }
+   450→
+   451→    const body: Record<string, unknown> = {
+   452→      year: yNum,
+   453→      title: formTitle.trim(),
+   454→      priority: Number(formPriority) || 3,
+   455→      progress: Math.max(0, Math.min(100, Math.round(Number(formProgress) || 0))),
+   456→      status: formStatus,
+   457→    }
+   458→
+   459→    if (formDescription.trim()) {
+   460→      body.description = formDescription.trim()
+   461→    } else {
+   462→      body.description = null
+   463→    }
+   464→
+   465→    if (formCategoryId !== NONE_SENTINEL) {
+   466→      body.goalCategoryId = formCategoryId
+   467→    } else {
+   468→      body.goalCategoryId = null
+   469→    }
+   470→
+   471→    if (formTargetDate) {
+   472→      body.targetDate = formTargetDate
+   473→    } else {
+   474→      body.targetDate = null
+   475→    }
+   476→
+   477→    if (formRequiredBudget.trim() !== '') {
+   478→      body.requiredBudget = formRequiredBudget.trim()
+   479→    } else {
+   480→      body.requiredBudget = null
+   481→    }
+   482→    if (formSavedBudget.trim() !== '') {
+   483→      body.savedBudget = formSavedBudget.trim()
+   484→    } else {
+   485→      body.savedBudget = null
+   486→    }
+   487→
+   488→    if (formNote.trim()) {
+   489→      body.note = formNote.trim()
+   490→    } else {
+   491→      body.note = null
+   492→    }
+   493→
+   494→    setSubmitting(true)
+   495→    try {
+   496→      if (editing) {
+   497→        await updateMutation.mutateAsync({ id: editing.id, body })
+   498→      } else {
+   499→        await createMutation.mutateAsync(body)
+   500→      }
+   501→    } catch {
+   502→      // useApi already toasted the error.
+   503→    } finally {
+   504→      setSubmitting(false)
+   505→    }
+   506→  }
+   507→
+   508→  const handleDelete = async () => {
+   509→    if (!deleteTarget) return
+   510→    await deleteMutation.mutateAsync(deleteTarget.id)
+   511→  }
+   512→
+   513→  // -- Category handlers --
+   514→
+   515→  const openAddCat = () => {
+   516→    setNewCatName('')
+   517→    setNewCatColor(DEFAULT_COLOR)
+   518→    setAddCatOpen(true)
+   519→  }
+   520→
+   521→  const handleAddCat = async () => {
+   522→    if (!newCatName.trim()) {
+   523→      toast.error(`${t('common.required')}: ${t('common.name')}`)
+   524→      return
+   525→    }
+   526→    setAddCatSubmitting(true)
+   527→    try {
+   528→      await createCatMutation.mutateAsync({ name: newCatName.trim(), color: newCatColor })
+   529→    } catch {
+   530→      // toasted by useApi
+   531→    } finally {
+   532→      setAddCatSubmitting(false)
+   533→    }
+   534→  }
+   535→
+   536→  const openEditCat = (c: GoalCategoryWithCount) => {
+   537→    setEditCatTarget(c)
+   538→    setEditCatName(c.name)
+   539→    setEditCatColor(c.color ?? DEFAULT_COLOR)
+   540→  }
+   541→
+   542→  const handleUpdateCat = async () => {
+   543→    if (!editCatTarget) return
+   544→    if (!editCatName.trim()) {
+   545→      toast.error(`${t('common.required')}: ${t('common.name')}`)
+   546→      return
+   547→    }
+   548→    setCatSubmitting(true)
+   549→    try {
+   550→      await updateCatMutation.mutateAsync({
+   551→        id: editCatTarget.id,
+   552→        body: { name: editCatName.trim(), color: editCatColor },
+   553→      })
+   554→    } catch {
+   555→      // toasted by useApi
+   556→    } finally {
+   557→      setCatSubmitting(false)
+   558→    }
+   559→  }
+   560→
+   561→  const handleDeleteCat = async () => {
+   562→    if (!deleteCatTarget) return
+   563→    await deleteCatMutation.mutateAsync(deleteCatTarget.id)
+   564→  }
+   565→
+   566→  // ---------------------------------------------------------------------------
+   567→  // Render helpers
+   568→  // ---------------------------------------------------------------------------
+   569→
+   570→  const priorityBadgeClass = (p: number) => {
+   571→    if (p <= 1) return 'border-expense/30 bg-expense/10 text-expense'
+   572→    if (p === 2) return 'border-warning/30 bg-warning/10 text-warning'
+   573→    if (p === 3) return 'border-info/30 bg-info/10 text-info'
+   574→    return 'border-muted-foreground/30 bg-muted text-muted-foreground'
+   575→  }
+   576→
+   577→  const statusBadgeClass = (s: GoalStatus) => {
+   578→    if (s === 'completed') return 'border-income/30 bg-income/10 text-income'
+   579→    if (s === 'in_progress') return 'border-info/30 bg-info/10 text-info'
+   580→    if (s === 'on_hold') return 'border-warning/30 bg-warning/10 text-warning'
+   581→    if (s === 'cancelled') return 'border-expense/30 bg-expense/10 text-expense'
+   582→    return 'border-muted-foreground/30 bg-muted text-muted-foreground'
+   583→  }
+   584→
+   585→  const statusLabel = (s: GoalStatus) => t(`goal.status.${s}`)
+   586→
+   587→  // ---------------------------------------------------------------------------
+   588→  // Chart data
+   589→  // ---------------------------------------------------------------------------
+   590→
+   591→  const chartData = useMemo(
+   592→    () =>
+   593→      summary.byCategory.map((c) => ({
+   594→        name: c.name,
+   595→        count: c.count,
+   596→        color: c.color || DEFAULT_COLOR,
+   597→      })),
+   598→    [summary.byCategory],
+   599→  )
+   600→
+   601→  // ---------------------------------------------------------------------------
+   602→  // Render
+   603→  // ---------------------------------------------------------------------------
+   604→
+   605→  return (
+   606→    <div className="space-y-6">
+   607→      {/* Header */}
+   608→      <PageHeader
+   609→        title={t('goal.title')}
+   610→        actions={
+   611→          <>
+   612→            <Button
+   613→              variant="outline"
+   614→              onClick={handleExport}
+   615→              disabled={loading || summary.totalGoals === 0}
+   616→            >
+   617→              <Download className="h-4 w-4" />
+   618→              <span className="hidden sm:inline">{t('common.exportCsv')}</span>
+   619→            </Button>
+   620→            <Button onClick={openCreate}>
+   621→              <Plus className="h-4 w-4" />
+   622→              <span className="hidden sm:inline">{t('goal.add')}</span>
+   623→            </Button>
+   624→          </>
+   625→        }
+   626→      />
+   627→
+   628→      {/* Year selector */}
+   629→      <div className="flex items-center gap-2">
+   630→        <Button
+   631→          variant="outline"
+   632→          size="icon"
+   633→          onClick={() => {
+   634→            setYear((y) => y - 1)
+   635→            setPage(1)
+   636→          }}
+   637→          aria-label="Previous year"
+   638→        >
+   639→          <ChevronLeft className="h-4 w-4" />
+   640→        </Button>
+   641→        <Select
+   642→          value={String(year)}
+   643→          onValueChange={(v) => {
+   644→            setYear(Number(v))
+   645→            setPage(1)
+   646→          }}
+   647→        >
+   648→          <SelectTrigger className="w-[140px]" aria-label={t('common.year')}>
+   649→            <CalendarClock className="mr-2 h-4 w-4 text-muted-foreground" />
+   650→            <SelectValue />
+   651→          </SelectTrigger>
+   652→          <SelectContent>
+   653→            {yearOptions.map((y) => (
+   654→              <SelectItem key={y} value={String(y)}>
+   655→                {y}
+   656→              </SelectItem>
+   657→            ))}
+   658→          </SelectContent>
+   659→        </Select>
+   660→        <Button
+   661→          variant="outline"
+   662→          size="icon"
+   663→          onClick={() => {
+   664→            setYear((y) => y + 1)
+   665→            setPage(1)
+   666→          }}
+   667→          aria-label="Next year"
+   668→        >
+   669→          <ChevronRight className="h-4 w-4" />
+   670→        </Button>
+   671→        {year !== currentYear && (
+   672→          <Button
+   673→            variant="ghost"
+   674→            size="sm"
+   675→            onClick={() => {
+   676→              setYear(currentYear)
+   677→              setPage(1)
+   678→            }}
+   679→          >
+   680→            {t('common.thisYear')}
+   681→          </Button>
+   682→        )}
+   683→      </div>
+   684→
+   685→      {/* Summary strip */}
+   686→      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+   687→        <StatCard
+   688→          label={t('goal.totalGoals')}
+   689→          value={num(summary.totalGoals)}
+   690→          icon={Target}
+   691→          loading={loading}
+   692→        />
+   693→        <StatCard
+   694→          label={t('goal.completedGoals')}
+   695→          value={num(summary.completedGoals)}
+   696→          icon={CheckCircle2}
+   697→          tone="income"
+   698→          loading={loading}
+   699→        />
+   700→        <StatCard
+   701→          label={t('goal.inProgressGoals')}
+   702→          value={num(summary.inProgressGoals)}
+   703→          icon={CircleDollarSign}
+   704→          tone="info"
+   705→          loading={loading}
+   706→        />
+   707→        <StatCard
+   708→          label={t('goal.overallProgress')}
+   709→          value={`${num(Math.round(summary.overallProgress))}%`}
+   710→          icon={Gauge}
+   711→          loading={loading}
+   712→        />
+   713→        <StatCard
+   714→          label={t('goal.requiredTotal')}
+   715→          value={money(summary.requiredTotal)}
+   716→          icon={Wallet}
+   717→          loading={loading}
+   718→        />
+   719→        <StatCard
+   720→          label={t('goal.savedTotal')}
+   721→          value={money(summary.savedTotal)}
+   722→          icon={PiggyBank}
+   723→          tone="income"
+   724→          loading={loading}
+   725→        />
+   726→        <StatCard
+   727→          label={t('goal.remainingTotal')}
+   728→          value={money(summary.remainingTotal)}
+   729→          icon={CircleDollarSign}
+   730→          tone={Number(summary.remainingTotal) > 0 ? 'expense' : 'default'}
+   731→          loading={loading}
+   732→        />
+   733→      </div>
+   734→
+   735→      {/* Category comparison chart */}
+   736→      <Card>
+   737→        <CardHeader>
+   738→          <CardTitle>{t('analytics.yearComparison')}</CardTitle>
+   739→        </CardHeader>
+   740→        <CardContent>
+   741→          {chartData.length === 0 ? (
+   742→            <EmptyState title={t('common.empty')} />
+   743→          ) : (
+   744→            <ResponsiveContainer
+   745→              width="100%"
+   746→              height={Math.max(180, chartData.length * 44 + 24)}
+   747→            >
+   748→              <BarChart
+   749→                layout="vertical"
+   750→                data={chartData}
+   751→                margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
+   752→              >
+   753→                <CartesianGrid
+   754→                  strokeDasharray="3 3"
+   755→                  className="stroke-border"
+   756→                  horizontal={false}
+   757→                />
+   758→                <XAxis type="number" hide />
+   759→                <YAxis
+   760→                  type="category"
+   761→                  dataKey="name"
+   762→                  width={120}
+   763→                  tickLine={false}
+   764→                  axisLine={false}
+   765→                  fontSize={12}
+   766→                  className="text-muted-foreground"
+   767→                />
+   768→                <RechartsTooltip
+   769→                  cursor={{ fill: 'var(--accent)', opacity: 0.4 }}
+   770→                  content={
+   771→                    <CountTooltip
+   772→                      countLabel={t('goal.totalGoals')}
+   773→                      num={num}
+   774→                    />
+   775→                  }
+   776→                />
+   777→                <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={26}>
+   778→                  {chartData.map((entry, i) => (
+   779→                    <Cell key={i} fill={entry.color} />
+   780→                  ))}
+   781→                </Bar>
+   782→              </BarChart>
+   783→            </ResponsiveContainer>
+   784→          )}
+   785→        </CardContent>
+   786→      </Card>
+   787→
+   788→      {/* Filter bar */}
+   789→      <Card>
+   790→        <CardContent className="pt-6">
+   791→          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+   792→            <div className="relative">
+   793→              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   794→              <Input
+   795→                placeholder={t('common.search')}
+   796→                value={search}
+   797→                onChange={(e) => {
+   798→                  setSearch(e.target.value)
+   799→                  setPage(1)
+   800→                }}
+   801→                className="pl-8"
+   802→              />
+   803→            </div>
+   804→            <Select
+   805→              value={filterStatus}
+   806→              onValueChange={(v) => {
+   807→                setFilterStatus(v)
+   808→                setPage(1)
+   809→              }}
+   810→            >
+   811→              <SelectTrigger>
+   812→                <SelectValue placeholder={t('common.status')} />
+   813→              </SelectTrigger>
+   814→              <SelectContent>
+   815→                <SelectItem value={ALL_SENTINEL}>{t('common.all')}</SelectItem>
+   816→                {STATUSES.map((s) => (
+   817→                  <SelectItem key={s} value={s}>
+   818→                    {statusLabel(s)}
+   819→                  </SelectItem>
+   820→                ))}
+   821→              </SelectContent>
+   822→            </Select>
+   823→            <Select
+   824→              value={filterCategoryId}
+   825→              onValueChange={(v) => {
+   826→                setFilterCategoryId(v)
+   827→                setPage(1)
+   828→              }}
+   829→            >
+   830→              <SelectTrigger>
+   831→                <SelectValue placeholder={t('common.category')} />
+   832→              </SelectTrigger>
+   833→              <SelectContent>
+   834→                <SelectItem value={ALL_SENTINEL}>{t('common.all')}</SelectItem>
+   835→                {categories.map((c) => (
+   836→                  <SelectItem key={c.id} value={c.id}>
+   837→                    {c.name}
+   838→                  </SelectItem>
+   839→                ))}
+   840→              </SelectContent>
+   841→            </Select>
+   842→            <Select
+   843→              value={filterPriority}
+   844→              onValueChange={(v) => {
+   845→                setFilterPriority(v)
+   846→                setPage(1)
+   847→              }}
+   848→            >
+   849→              <SelectTrigger>
+   850→                <SelectValue placeholder={t('common.priority')} />
+   851→              </SelectTrigger>
+   852→              <SelectContent>
+   853→                <SelectItem value={ALL_SENTINEL}>{t('common.all')}</SelectItem>
+   854→                {PRIORITIES.map((p) => (
+   855→                  <SelectItem key={p} value={String(p)}>
+   856→                    {p} — {t(`goal.priorities.${p}`)}
+   857→                  </SelectItem>
+   858→                ))}
+   859→              </SelectContent>
+   860→            </Select>
+   861→            <div className="flex gap-2">
+   862→              <Button
+   863→                variant="ghost"
+   864→                onClick={clearFilters}
+   865→                disabled={!hasFilters}
+   866→                className="flex-1"
+   867→              >
+   868→                <X className="h-4 w-4" />
+   869→                <span className="hidden sm:inline">{t('common.clearFilters')}</span>
+   870→              </Button>
+   871→              <Button
+   872→                variant="outline"
+   873→                onClick={() => setManageCatsOpen(true)}
+   874→                aria-label={t('goal.category')}
+   875→              >
+   876→                <Tag className="h-4 w-4" />
+   877→                <span className="hidden md:inline">{t('goal.category')}</span>
+   878→              </Button>
+   879→            </div>
+   880→          </div>
+   881→        </CardContent>
+   882→      </Card>
+   883→
+   884→      {/* Goals grid */}
+   885→      {loading ? (
+   886→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   887→          {Array.from({ length: 6 }).map((_, i) => (
+   888→            <Card key={i}>
+   889→              <CardContent className="space-y-3 pt-6">
+   890→                <Skeleton className="h-5 w-2/3" />
+   891→                <Skeleton className="h-4 w-1/3" />
+   892→                <Skeleton className="h-2 w-full" />
+   893→                <Skeleton className="h-4 w-1/2" />
+   894→              </CardContent>
+   895→            </Card>
+   896→          ))}
+   897→        </div>
+   898→      ) : items.length === 0 ? (
+   899→        <EmptyState
+   900→          title={t('goal.empty')}
+   901→          action={
+   902→            <Button onClick={openCreate}>
+   903→              <Plus className="h-4 w-4" />
+   904→              {t('goal.add')}
+   905→            </Button>
+   906→          }
+   907→        />
+   908→      ) : (
+   909→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   910→          {items.map((g) => (
+   911→            <Card key={g.id} className="flex flex-col">
+   912→              <CardContent className="flex flex-1 flex-col gap-3 pt-6">
+   913→                {/* Header: badges + actions */}
+   914→                <div className="flex items-start justify-between gap-2">
+   915→                  <div className="min-w-0 flex-1">
+   916→                    <div className="flex flex-wrap items-center gap-1.5">
+   917→                      <Badge
+   918→                        variant="outline"
+   919→                        className={priorityBadgeClass(g.priority)}
+   920→                      >
+   921→                        {t(`goal.priorities.${g.priority}`)}
+   922→                      </Badge>
+   923→                      {g.goalCategory && (
+   924→                        <Badge
+   925→                          variant="outline"
+   926→                          style={{
+   927→                            color: g.goalCategory.color ?? DEFAULT_COLOR,
+   928→                            borderColor: g.goalCategory.color ?? DEFAULT_COLOR,
+   929→                          }}
+   930→                        >
+   931→                          {g.goalCategory.name}
+   932→                        </Badge>
+   933→                      )}
+   934→                    </div>
+   935→                    <h3 className="mt-1.5 truncate text-base font-semibold">
+   936→                      {g.title}
+   937→                    </h3>
+   938→                    {g.description && (
+   939→                      <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+   940→                        {g.description}
+   941→                      </p>
+   942→                    )}
+   943→                  </div>
+   944→                  <DropdownMenu>
+   945→                    <DropdownMenuTrigger asChild>
+   946→                      <Button
+   947→                        variant="ghost"
+   948→                        size="icon"
+   949→                        className="-mr-2 -mt-1 h-7 w-7"
+   950→                        aria-label={t('common.actions')}
+   951→                      >
+   952→                        <MoreHorizontal className="h-4 w-4" />
+   953→                      </Button>
+   954→                    </DropdownMenuTrigger>
+   955→                    <DropdownMenuContent align="end">
+   956→                      <DropdownMenuItem onClick={() => openEdit(g)}>
+   957→                        <Pencil className="mr-2 h-4 w-4" />
+   958→                        {t('common.edit')}
+   959→                      </DropdownMenuItem>
+   960→                      <DropdownMenuSeparator />
+   961→                      <DropdownMenuItem
+   962→                        className="text-expense"
+   963→                        onClick={() => setDeleteTarget(g)}
+   964→                      >
+   965→                        <Trash2 className="mr-2 h-4 w-4" />
+   966→                        {t('common.delete')}
+   967→                      </DropdownMenuItem>
+   968→                    </DropdownMenuContent>
+   969→                  </DropdownMenu>
+   970→                </div>
+   971→
+   972→                {/* Status */}
+   973→                <Badge
+   974→                  variant="outline"
+   975→                  className={cn('w-fit', statusBadgeClass(g.status))}
+   976→                >
+   977→                  {statusLabel(g.status)}
+   978→                </Badge>
+   979→
+   980→                {/* Progress */}
+   981→                <div>
+   982→                  <div className="mb-1 flex items-center justify-between text-xs">
+   983→                    <span className="text-muted-foreground">
+   984→                      {t('common.progress')}
+   985→                    </span>
+   986→                    <span className="font-medium tabular-nums">
+   987→                      {num(g.progress)}%
+   988→                    </span>
+   989→                  </div>
+   990→                  <Progress value={g.progress} className="h-2" />
+   991→                </div>
+   992→
+   993→                {/* Budget row */}
+   994→                {g.requiredBudget && (
+   995→                  <div className="grid grid-cols-3 gap-2 text-xs">
+   996→                    <div>
+   997→                      <p className="text-muted-foreground">
+   998→                        {t('goal.requiredBudget')}
+   999→                      </p>
+  1000→                      <MoneyText value={g.requiredBudget} />
+  1001→                    </div>
+  1002→                    <div>
+  1003→                      <p className="text-muted-foreground">
+  1004→                        {t('goal.savedBudget')}
+  1005→                      </p>
+  1006→                      <MoneyText
+  1007→                        value={g.savedBudget ?? '0'}
+  1008→                        tone="income"
+  1009→                      />
+  1010→                    </div>
+  1011→                    <div>
+  1012→                      <p className="text-muted-foreground">
+  1013→                        {t('goal.remainingBudget')}
+  1014→                      </p>
+  1015→                      <MoneyText
+  1016→                        value={g.remainingBudget}
+  1017→                        tone={
+  1018→                          Number(g.remainingBudget) < 0 ? 'expense' : 'default'
+  1019→                        }
+  1020→                      />
+  1021→                    </div>
+  1022→                  </div>
+  1023→                )}
+  1024→
+  1025→                {/* Footer */}
+  1026→                <div className="mt-auto space-y-1 text-xs text-muted-foreground">
+  1027→                  {g.targetDate && (
+  1028→                    <div className="flex items-center gap-1.5">
+  1029→                      <CalendarClock className="h-3.5 w-3.5" />
+  1030→                      <span>{date(g.targetDate)}</span>
+  1031→                    </div>
+  1032→                  )}
+  1033→                  {g.note && <p className="line-clamp-2">{g.note}</p>}
+  1034→                </div>
+  1035→              </CardContent>
+  1036→            </Card>
+  1037→          ))}
+  1038→        </div>
+  1039→      )}
+  1040→
+  1041→      {/* Create / Edit dialog */}
+  1042→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+  1043→        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
+  1044→          <DialogHeader>
+  1045→            <DialogTitle>{editing ? t('goal.edit') : t('goal.add')}</DialogTitle>
+  1046→          </DialogHeader>
+  1047→
+  1048→          <div className="grid gap-4 py-2">
+  1049→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  1050→              <div className="space-y-1.5">
+  1051→                <Label>{t('common.year')}</Label>
+  1052→                <Input
+  1053→                  type="number"
+  1054→                  min={2000}
+  1055→                  max={2200}
+  1056→                  value={formYear}
+  1057→                  onChange={(e) => setFormYear(e.target.value)}
+  1058→                />
+  1059→              </div>
+  1060→              <div className="space-y-1.5">
+  1061→                <Label>{t('common.status')}</Label>
+  1062→                <Select
+  1063→                  value={formStatus}
+  1064→                  onValueChange={(v) => isGoalStatus(v) && setFormStatus(v)}
+  1065→                >
+  1066→                  <SelectTrigger>
+  1067→                    <SelectValue />
+  1068→                  </SelectTrigger>
+  1069→                  <SelectContent>
+  1070→                    {STATUSES.map((s) => (
+  1071→                      <SelectItem key={s} value={s}>
+  1072→                        {statusLabel(s)}
+  1073→                      </SelectItem>
+  1074→                    ))}
+  1075→                  </SelectContent>
+  1076→                </Select>
+  1077→              </div>
+  1078→            </div>
+  1079→
+  1080→            <div className="space-y-1.5">
+  1081→              <Label>{t('common.name')}</Label>
+  1082→              <Input
+  1083→                value={formTitle}
+  1084→                onChange={(e) => setFormTitle(e.target.value)}
+  1085→                placeholder={t('common.name')}
+  1086→              />
+  1087→            </div>
+  1088→
+  1089→            <div className="space-y-1.5">
+  1090→              <Label>{t('common.description')}</Label>
+  1091→              <Textarea
+  1092→                rows={2}
+  1093→                value={formDescription}
+  1094→                onChange={(e) => setFormDescription(e.target.value)}
+  1095→              />
+  1096→            </div>
+  1097→
+  1098→            {/* Category with inline add + manage */}
+  1099→            <div className="space-y-1.5">
+  1100→              <Label>{t('goal.category')}</Label>
+  1101→              <div className="flex gap-2">
+  1102→                <Select value={formCategoryId} onValueChange={setFormCategoryId}>
+  1103→                  <SelectTrigger className="flex-1">
+  1104→                    <SelectValue />
+  1105→                  </SelectTrigger>
+  1106→                  <SelectContent>
+  1107→                    <SelectItem value={NONE_SENTINEL}>
+  1108→                      {t('common.none')}
+  1109→                    </SelectItem>
+  1110→                    {categories.map((c) => (
+  1111→                      <SelectItem key={c.id} value={c.id}>
+  1112→                        {c.name}
+  1113→                      </SelectItem>
+  1114→                    ))}
+  1115→                  </SelectContent>
+  1116→                </Select>
+  1117→                <Button
+  1118→                  variant="outline"
+  1119→                  size="icon"
+  1120→                  onClick={openAddCat}
+  1121→                  aria-label={t('cat.add')}
+  1122→                >
+  1123→                  <Plus className="h-4 w-4" />
+  1124→                </Button>
+  1125→                <Button
+  1126→                  variant="outline"
+  1127→                  size="icon"
+  1128→                  onClick={() => setManageCatsOpen(true)}
+  1129→                  aria-label={t('cat.title')}
+  1130→                >
+  1131→                  <Tag className="h-4 w-4" />
+  1132→                </Button>
+  1133→              </div>
+  1134→            </div>
+  1135→
+  1136→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+  1137→              <div className="space-y-1.5">
+  1138→                <Label>{t('common.priority')}</Label>
+  1139→                <Select value={formPriority} onValueChange={setFormPriority}>
+  1140→                  <SelectTrigger>
+  1141→                    <SelectValue />
+  1142→                  </SelectTrigger>
+  1143→                  <SelectContent>
+  1144→                    {PRIORITIES.map((p) => (
+  1145→                      <SelectItem key={p} value={String(p)}>
+  1146→                        {p} — {t(`goal.priorities.${p}`)}
+  1147→                      </SelectItem>
+  1148→                    ))}
+  1149→                  </SelectContent>
+  1150→                </Select>
+  1151→              </div>
+  1152→              <div className="space-y-1.5">
+  1153→                <Label>{t('goal.progress')}</Label>
+  1154→                <Input
+  1155→                  type="number"
+  1156→                  min={0}
+  1157→                  max={100}
+  1158→                  step={1}
+  1159→                  value={formProgress}
+  1160→                  onChange={(e) => setFormProgress(e.target.value)}
+  1161→                />
+  1162→              </div>
+  1163→              <div className="space-y-1.5">
+  1164→                <Label>{t('goal.targetDate')}</Label>
+  1165→                <Input
+  1166→                  type="date"
+  1167→                  value={formTargetDate}
+  1168→                  onChange={(e) => setFormTargetDate(e.target.value)}
+  1169→                />
+  1170→              </div>
+  1171→            </div>
+  1172→
+  1173→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  1174→              <div className="space-y-1.5">
+  1175→                <Label>{t('goal.requiredBudget')}</Label>
+  1176→                <Input
+  1177→                  type="number"
+  1178→                  min={0}
+  1179→                  step="0.01"
+  1180→                  inputMode="decimal"
+  1181→                  value={formRequiredBudget}
+  1182→                  onChange={(e) => setFormRequiredBudget(e.target.value)}
+  1183→                />
+  1184→              </div>
+  1185→              <div className="space-y-1.5">
+  1186→                <Label>{t('goal.savedBudget')}</Label>
+  1187→                <Input
+  1188→                  type="number"
+  1189→                  min={0}
+  1190→                  step="0.01"
+  1191→                  inputMode="decimal"
+  1192→                  value={formSavedBudget}
+  1193→                  onChange={(e) => setFormSavedBudget(e.target.value)}
+  1194→                />
+  1195→              </div>
+  1196→            </div>
+  1197→
+  1198→            <div className="space-y-1.5">
+  1199→              <Label>{t('goal.note')}</Label>
+  1200→              <Textarea
+  1201→                rows={2}
+  1202→                value={formNote}
+  1203→                onChange={(e) => setFormNote(e.target.value)}
+  1204→              />
+  1205→            </div>
+  1206→          </div>
+  1207→
+  1208→          <DialogFooter>
+  1209→            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+  1210→              {t('common.cancel')}
+  1211→            </Button>
+  1212→            <Button onClick={handleSubmit} disabled={submitting}>
+  1213→              {submitting
+  1214→                ? t('common.loading')
+  1215→                : editing
+  1216→                  ? t('common.save')
+  1217→                  : t('common.create')}
+  1218→            </Button>
+  1219→          </DialogFooter>
+  1220→        </DialogContent>
+  1221→      </Dialog>
+  1222→
+  1223→      {/* Inline add category dialog */}
+  1224→      <Dialog open={addCatOpen} onOpenChange={setAddCatOpen}>
+  1225→        <DialogContent className="sm:max-w-[400px]">
+  1226→          <DialogHeader>
+  1227→            <DialogTitle>{t('cat.add')}</DialogTitle>
+  1228→          </DialogHeader>
+  1229→          <div className="grid gap-3 py-2">
+  1230→            <div className="space-y-1.5">
+  1231→              <Label>{t('common.name')}</Label>
+  1232→              <Input
+  1233→                value={newCatName}
+  1234→                onChange={(e) => setNewCatName(e.target.value)}
+  1235→                placeholder={t('common.name')}
+  1236→              />
+  1237→            </div>
+  1238→            <div className="space-y-1.5">
+  1239→              <Label>{t('common.color')}</Label>
+  1240→              <div className="flex items-center gap-2">
+  1241→                <input
+  1242→                  type="color"
+  1243→                  value={newCatColor}
+  1244→                  onChange={(e) => setNewCatColor(e.target.value)}
+  1245→                  className="h-9 w-12 rounded border border-input bg-background"
+  1246→                  aria-label={t('common.color')}
+  1247→                />
+  1248→                <Input
+  1249→                  value={newCatColor}
+  1250→                  onChange={(e) => setNewCatColor(e.target.value)}
+  1251→                  className="flex-1"
+  1252→                />
+  1253→              </div>
+  1254→            </div>
+  1255→          </div>
+  1256→          <DialogFooter>
+  1257→            <Button variant="outline" onClick={() => setAddCatOpen(false)}>
+  1258→              {t('common.cancel')}
+  1259→            </Button>
+  1260→            <Button onClick={handleAddCat} disabled={addCatSubmitting}>
+  1261→              {addCatSubmitting ? t('common.loading') : t('common.create')}
+  1262→            </Button>
+  1263→          </DialogFooter>
+  1264→        </DialogContent>
+  1265→      </Dialog>
+  1266→
+  1267→      {/* Manage categories dialog */}
+  1268→      <Dialog open={manageCatsOpen} onOpenChange={setManageCatsOpen}>
+  1269→        <DialogContent className="sm:max-w-[480px]">
+  1270→          <DialogHeader>
+  1271→            <DialogTitle>{t('cat.title')}</DialogTitle>
+  1272→            <DialogDescription>{t('goal.category')}</DialogDescription>
+  1273→          </DialogHeader>
+  1274→          <div className="space-y-2">
+  1275→            {catsQuery.isLoading ? (
+  1276→              <div className="space-y-2">
+  1277→                {Array.from({ length: 3 }).map((_, i) => (
+  1278→                  <Skeleton key={i} className="h-10 w-full" />
+  1279→                ))}
+  1280→              </div>
+  1281→            ) : categories.length === 0 ? (
+  1282→              <EmptyState
+  1283→                title={t('cat.empty')}
+  1284→                action={
+  1285→                  <Button variant="outline" size="sm" onClick={openAddCat}>
+  1286→                    <Plus className="h-4 w-4" />
+  1287→                    {t('cat.add')}
+  1288→                  </Button>
+  1289→                }
+  1290→              />
+  1291→            ) : (
+  1292→              <ScrollArea className="max-h-72">
+  1293→                <div className="space-y-2 pr-2">
+  1294→                  {categories.map((c) => (
+  1295→                    <div
+  1296→                      key={c.id}
+  1297→                      className="flex items-center gap-2 rounded-md border p-2"
+  1298→                    >
+  1299→                      <span
+  1300→                        className="h-4 w-4 shrink-0 rounded-full"
+  1301→                        style={{ backgroundColor: c.color ?? DEFAULT_COLOR }}
+  1302→                      />
+  1303→                      {editCatTarget?.id === c.id ? (
+  1304→                        <>
+  1305→                          <Input
+  1306→                            value={editCatName}
+  1307→                            onChange={(e) => setEditCatName(e.target.value)}
+  1308→                            className="h-8 flex-1"
+  1309→                          />
+  1310→                          <input
+  1311→                            type="color"
+  1312→                            value={editCatColor}
+  1313→                            onChange={(e) => setEditCatColor(e.target.value)}
+  1314→                            className="h-8 w-8 shrink-0 rounded border border-input bg-background"
+  1315→                            aria-label={t('common.color')}
+  1316→                          />
+  1317→                          <Button
+  1318→                            size="sm"
+  1319→                            onClick={handleUpdateCat}
+  1320→                            disabled={catSubmitting}
+  1321→                          >
+  1322→                            {t('common.save')}
+  1323→                          </Button>
+  1324→                          <Button
+  1325→                            size="sm"
+  1326→                            variant="ghost"
+  1327→                            onClick={() => setEditCatTarget(null)}
+  1328→                          >
+  1329→                            {t('common.cancel')}
+  1330→                          </Button>
+  1331→                        </>
+  1332→                      ) : (
+  1333→                        <>
+  1334→                          <span className="flex-1 truncate text-sm font-medium">
+  1335→                            {c.name}
+  1336→                          </span>
+  1337→                          {typeof c._count?.goals === 'number' && (
+  1338→                            <Badge variant="secondary" className="tabular-nums">
+  1339→                              {num(c._count.goals)}
+  1340→                            </Badge>
+  1341→                          )}
+  1342→                          <Button
+  1343→                            size="icon"
+  1344→                            variant="ghost"
+  1345→                            className="h-7 w-7"
+  1346→                            onClick={() => openEditCat(c)}
+  1347→                            aria-label={t('common.edit')}
+  1348→                          >
+  1349→                            <Pencil className="h-4 w-4" />
+  1350→                          </Button>
+  1351→                          <Button
+  1352→                            size="icon"
+  1353→                            variant="ghost"
+  1354→                            className="h-7 w-7 text-expense"
+  1355→                            onClick={() => setDeleteCatTarget(c)}
+  1356→                            aria-label={t('common.delete')}
+  1357→                          >
+  1358→                            <Trash2 className="h-4 w-4" />
+  1359→                          </Button>
+  1360→                        </>
+  1361→                      )}
+  1362→                    </div>
+  1363→                  ))}
+  1364→                </div>
+  1365→              </ScrollArea>
+  1366→            )}
+  1367→          </div>
+  1368→          <DialogFooter className="sm:justify-between">
+  1369→            <Button variant="outline" onClick={openAddCat}>
+  1370→              <Plus className="h-4 w-4" />
+  1371→              {t('cat.add')}
+  1372→            </Button>
+  1373→            <Button variant="ghost" onClick={() => setManageCatsOpen(false)}>
+  1374→              {t('common.close')}
+  1375→            </Button>
+  1376→          </DialogFooter>
+  1377→        </DialogContent>
+  1378→      </Dialog>
+  1379→
+  1380→      {/* Delete goal confirmation */}
+  1381→      <ConfirmDialog
+  1382→        open={!!deleteTarget}
+  1383→        onOpenChange={(v) => !v && setDeleteTarget(null)}
+  1384→        title={t('common.delete')}
+  1385→        description={deleteTarget?.title}
+  1386→        confirmLabel={t('common.delete')}
+  1387→        cancelLabel={t('common.cancel')}
+  1388→        destructive
+  1389→        onConfirm={handleDelete}
+  1390→      />
+  1391→
+  1392→      {/* Delete category confirmation */}
+  1393→      <ConfirmDialog
+  1394→        open={!!deleteCatTarget}
+  1395→        onOpenChange={(v) => !v && setDeleteCatTarget(null)}
+  1396→        title={t('common.delete')}
+  1397→        description={deleteCatTarget?.name}
+  1398→        confirmLabel={t('common.delete')}
+  1399→        cancelLabel={t('common.cancel')}
+  1400→        destructive
+  1401→        onConfirm={handleDeleteCat}
+  1402→      />
+  1403→    </div>
+  1404→  )
+  1405→}
+  1406→

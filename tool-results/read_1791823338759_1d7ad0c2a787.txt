@@ -1,0 +1,1224 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useMemo, useState } from 'react'
+     4→     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→     5→import { toast } from 'sonner'
+     6→     6→import {
+     7→     7→  Plus,
+     8→     8→  MoreHorizontal,
+     9→     9→  Eye,
+    10→    10→  Pencil,
+    11→    11→  Trash2,
+    12→    12→  Landmark,
+    13→    13→  CalendarClock,
+    14→    14→  CalendarDays,
+    15→    15→  HandCoins,
+    16→    16→  Flag,
+    17→    17→  CheckCircle2,
+    18→    18→  Clock,
+    19→    19→} from 'lucide-react'
+    20→    20→
+    21→    21→import { useI18n } from '@/lib/use-i18n'
+    22→    22→import { useApi } from '@/lib/use-api'
+    23→    23→import { toLocalDateString } from '@/lib/money'
+    24→    24→import { cn } from '@/lib/utils'
+    25→    25→
+    26→    26→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    27→    27→import { Button } from '@/components/ui/button'
+    28→    28→import { Input } from '@/components/ui/input'
+    29→    29→import { Label } from '@/components/ui/label'
+    30→    30→import { Textarea } from '@/components/ui/textarea'
+    31→    31→import { Badge } from '@/components/ui/badge'
+    32→    32→import { Skeleton } from '@/components/ui/skeleton'
+    33→    33→import { ScrollArea } from '@/components/ui/scroll-area'
+    34→    34→import {
+    35→    35→  Select,
+    36→    36→  SelectContent,
+    37→    37→  SelectItem,
+    38→    38→  SelectTrigger,
+    39→    39→  SelectValue,
+    40→    40→} from '@/components/ui/select'
+    41→    41→import {
+    42→    42→  Dialog,
+    43→    43→  DialogContent,
+    44→    44→  DialogDescription,
+    45→    45→  DialogFooter,
+    46→    46→  DialogHeader,
+    47→    47→  DialogTitle,
+    48→    48→} from '@/components/ui/dialog'
+    49→    49→import {
+    50→    50→  DropdownMenu,
+    51→    51→  DropdownMenuContent,
+    52→    52→  DropdownMenuItem,
+    53→    53→  DropdownMenuSeparator,
+    54→    54→  DropdownMenuTrigger,
+    55→    55→} from '@/components/ui/dropdown-menu'
+    56→    56→import { EmptyState, PageHeader } from '@/components/shared'
+    57→    57→import { ConfirmDialog } from '@/components/confirm-dialog'
+    58→    58→
+    59→    59→// ---------------------------------------------------------------------------
+    60→    60→// Types
+    61→    61→// ---------------------------------------------------------------------------
+    62→    62→
+    63→    63→type CreditStatus = 'active' | 'completed' | 'on_hold'
+    64→    64→type InstallmentStatus = 'pending' | 'paid'
+    65→    65→
+    66→    66→interface CreditInstallment {
+    67→    67→  id: string
+    68→    68→  installmentNumber: number
+    69→    69→  dueDate: string
+    70→    70→  amount: string
+    71→    71→  status: InstallmentStatus
+    72→    72→}
+    73→    73→
+    74→    74→interface CreditRepayment {
+    75→    75→  id: string
+    76→    76→  amount: string
+    77→    77→  paymentDate: string
+    78→    78→  comment: string | null
+    79→    79→  walletId: string | null
+    80→    80→}
+    81→    81→
+    82→    82→interface BankCredit {
+    83→    83→  id: string
+    84→    84→  creditName: string
+    85→    85→  lender: string
+    86→    86→  originalPrincipal: string
+    87→    87→  durationMonths: number
+    88→    88→  startDate: string
+    89→    89→  monthlyInstallment: string
+    90→    90→  interestRate: string | null
+    91→    91→  fees: string | null
+    92→    92→  paymentDay: number
+    93→    93→  description: string | null
+    94→    94→  status: string
+    95→    95→  createdAt: string
+    96→    96→  updatedAt: string
+    97→    97→  // list endpoint returns repayments: [{ amount }] only; detail returns full rows
+    98→    98→  repayments: { amount: string }[] | CreditRepayment[]
+    99→    99→  // summary
+   100→   100→  totalRepaid: string
+   101→   101→  outstanding: string
+   102→   102→  paidInstallments: number
+   103→   103→  remainingInstallments: number
+   104→   104→  progressPct: number
+   105→   105→  nextDueDate: string | null
+   106→   106→  expectedEndDate: string
+   107→   107→}
+   108→   108→
+   109→   109→interface BankCreditDetail extends BankCredit {
+   110→   110→  installments: CreditInstallment[]
+   111→   111→  repayments: CreditRepayment[]
+   112→   112→}
+   113→   113→
+   114→   114→interface BankCreditsListResponse {
+   115→   115→  items: BankCredit[]
+   116→   116→}
+   117→   117→
+   118→   118→interface Wallet {
+   119→   119→  id: string
+   120→   120→  name: string
+   121→   121→  type: string
+   122→   122→  balance: string
+   123→   123→}
+   124→   124→
+   125→   125→interface WalletsResponse {
+   126→   126→  wallets: Wallet[]
+   127→   127→}
+   128→   128→
+   129→   129→// ---------------------------------------------------------------------------
+   130→   130→// Constants & helpers
+   131→   131→// ---------------------------------------------------------------------------
+   132→   132→
+   133→   133→const CREDIT_STATUSES: CreditStatus[] = ['active', 'completed', 'on_hold']
+   134→   134→
+   135→   135→function todayLocal(): string {
+   136→   136→  return toLocalDateString(new Date())
+   137→   137→}
+   138→   138→
+   139→   139→function startOfToday(): Date {
+   140→   140→  const d = new Date()
+   141→   141→  d.setHours(0, 0, 0, 0)
+   142→   142→  return d
+   143→   143→}
+   144→   144→
+   145→   145→/** Map a repayment progress percent to a credit-card color palette.
+   146→   146→ *  <50% red, 50-<70% orange, 70-<90% dark green, 90-100% green. */
+   147→   147→function creditCardColor(progressPct: number): {
+   148→   148→  stripe: string
+   149→   149→  text: string
+   150→   150→  tint: string
+   151→   151→} {
+   152→   152→  if (progressPct < 50) {
+   153→   153→    return { stripe: '#ef4444', text: '#b91c1c', tint: 'rgba(239,68,68,0.08)' }
+   154→   154→  }
+   155→   155→  if (progressPct < 70) {
+   156→   156→    return { stripe: '#f97316', text: '#c2410c', tint: 'rgba(249,115,22,0.08)' }
+   157→   157→  }
+   158→   158→  if (progressPct < 90) {
+   159→   159→    return { stripe: '#15803d', text: '#15803d', tint: 'rgba(21,128,61,0.10)' }
+   160→   160→  }
+   161→   161→  return { stripe: '#22c55e', text: '#15803d', tint: 'rgba(34,197,94,0.10)' }
+   162→   162→}
+   163→   163→
+   164→   164→/** Classify an installment segment color for the schedule grid. */
+   165→   165→function installmentSegment(inst: CreditInstallment): {
+   166→   166→  bg: string
+   167→   167→  border: string
+   168→   168→  text: string
+   169→   169→  kind: 'paid' | 'overdue' | 'pending'
+   170→   170→} {
+   171→   171→  if (inst.status === 'paid') {
+   172→   172→    return {
+   173→   173→      bg: 'rgba(34,197,94,0.15)',
+   174→   174→      border: 'rgba(34,197,94,0.55)',
+   175→   175→      text: '#15803d',
+   176→   176→      kind: 'paid',
+   177→   177→    }
+   178→   178→  }
+   179→   179→  const due = new Date(inst.dueDate)
+   180→   180→  if (!isNaN(due.getTime()) && due < startOfToday()) {
+   181→   181→    return {
+   182→   182→      bg: 'rgba(239,68,68,0.15)',
+   183→   183→      border: 'rgba(239,68,68,0.55)',
+   184→   184→      text: '#b91c1c',
+   185→   185→      kind: 'overdue',
+   186→   186→    }
+   187→   187→  }
+   188→   188→  return {
+   189→   189→    bg: 'rgba(245,158,11,0.15)',
+   190→   190→    border: 'rgba(245,158,11,0.45)',
+   191→   191→    text: '#a16207',
+   192→   192→    kind: 'pending',
+   193→   193→  }
+   194→   194→}
+   195→   195→
+   196→   196→function statusLabelKey(status: string): string {
+   197→   197→  if (status === 'completed') return 'goal.status.completed'
+   198→   198→  if (status === 'on_hold') return 'goal.status.on_hold'
+   199→   199→  return 'common.active'
+   200→   200→}
+   201→   201→
+   202→   202→function statusToneClass(status: string): string {
+   203→   203→  if (status === 'completed') return 'border-income/30 text-income'
+   204→   204→  if (status === 'on_hold') return 'border-warning/30 text-warning'
+   205→   205→  return 'border-info/30 text-info'
+   206→   206→}
+   207→   207→
+   208→   208→// ---------------------------------------------------------------------------
+   209→   209→// Component
+   210→   210→// ---------------------------------------------------------------------------
+   211→   211→
+   212→   212→export function BankCreditsView() {
+   213→   213→  const { t, money, date } = useI18n()
+   214→   214→  const api = useApi()
+   215→   215→  const qc = useQueryClient()
+   216→   216→
+   217→   217→  // ---- Credits list ----
+   218→   218→  const creditsQuery = useQuery<BankCreditsListResponse>({
+   219→   219→    queryKey: ['bank-credits'],
+   220→   220→    queryFn: () => api.get<BankCreditsListResponse>('/api/bank-credits'),
+   221→   221→  })
+   222→   222→
+   223→   223→  const credits = creditsQuery.data?.items ?? []
+   224→   224→  const loading = creditsQuery.isLoading
+   225→   225→
+   226→   226→  // ---- Create / Edit dialog state ----
+   227→   227→  const [creditDialogOpen, setCreditDialogOpen] = useState(false)
+   228→   228→  const [editing, setEditing] = useState<BankCredit | null>(null)
+   229→   229→  const [submittingCredit, setSubmittingCredit] = useState(false)
+   230→   230→
+   231→   231→  const [formCreditName, setFormCreditName] = useState('')
+   232→   232→  const [formLender, setFormLender] = useState('')
+   233→   233→  const [formOriginalPrincipal, setFormOriginalPrincipal] = useState('')
+   234→   234→  const [formDurationMonths, setFormDurationMonths] = useState('12')
+   235→   235→  const [formStartDate, setFormStartDate] = useState(todayLocal())
+   236→   236→  const [formMonthlyInstallment, setFormMonthlyInstallment] = useState('')
+   237→   237→  const [formInterestRate, setFormInterestRate] = useState('')
+   238→   238→  const [formFees, setFormFees] = useState('')
+   239→   239→  const [formPaymentDay, setFormPaymentDay] = useState('1')
+   240→   240→  const [formDescription, setFormDescription] = useState('')
+   241→   241→  const [formStatus, setFormStatus] = useState<CreditStatus>('active')
+   242→   242→
+   243→   243→  // ---- Schedule dialog state ----
+   244→   244→  const [scheduleCredit, setScheduleCredit] = useState<BankCredit | null>(null)
+   245→   245→  const [scheduleOpen, setScheduleOpen] = useState(false)
+   246→   246→
+   247→   247→  const scheduleQuery = useQuery<BankCreditDetail>({
+   248→   248→    queryKey: ['bank-credit', scheduleCredit?.id],
+   249→   249→    queryFn: () => api.get<BankCreditDetail>(`/api/bank-credits/${scheduleCredit!.id}`),
+   250→   250→    enabled: !!scheduleCredit && scheduleOpen,
+   251→   251→  })
+   252→   252→
+   253→   253→  // ---- Add repayment dialog state ----
+   254→   254→  const [repayCredit, setRepayCredit] = useState<BankCredit | null>(null)
+   255→   255→  const [repayOpen, setRepayOpen] = useState(false)
+   256→   256→  const [repayAmount, setRepayAmount] = useState('')
+   257→   257→  const [repayDate, setRepayDate] = useState(todayLocal())
+   258→   258→  const [repayComment, setRepayComment] = useState('')
+   259→   259→  const [repayWalletId, setRepayWalletId] = useState<string>('__none__')
+   260→   260→  const [submittingRepay, setSubmittingRepay] = useState(false)
+   261→   261→
+   262→   262→  const walletsQuery = useQuery<WalletsResponse>({
+   263→   263→    queryKey: ['wallets'],
+   264→   264→    queryFn: () => api.get<WalletsResponse>('/api/wallets'),
+   265→   265→    enabled: repayOpen,
+   266→   266→  })
+   267→   267→
+   268→   268→  // ---- Delete state ----
+   269→   269→  const [deleteTarget, setDeleteTarget] = useState<BankCredit | null>(null)
+   270→   270→
+   271→   271→  // ---------------------------------------------------------------------------
+   272→   272→  // Mutations
+   273→   273→  // ---------------------------------------------------------------------------
+   274→   274→
+   275→   275→  const createMutation = useMutation({
+   276→   276→    mutationFn: (body: Record<string, unknown>) =>
+   277→   277→      api.post('/api/bank-credits', body),
+   278→   278→    onSuccess: () => {
+   279→   279→      toast.success(t('credit.created'))
+   280→   280→      qc.invalidateQueries({ queryKey: ['bank-credits'] })
+   281→   281→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   282→   282→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   283→   283→      setCreditDialogOpen(false)
+   284→   284→    },
+   285→   285→  })
+   286→   286→
+   287→   287→  const updateMutation = useMutation({
+   288→   288→    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+   289→   289→      api.put(`/api/bank-credits/${id}`, body),
+   290→   290→    onSuccess: () => {
+   291→   291→      toast.success(t('credit.updated'))
+   292→   292→      qc.invalidateQueries({ queryKey: ['bank-credits'] })
+   293→   293→      qc.invalidateQueries({ queryKey: ['bank-credit', editing?.id] })
+   294→   294→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   295→   295→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   296→   296→      setCreditDialogOpen(false)
+   297→   297→    },
+   298→   298→  })
+   299→   299→
+   300→   300→  const deleteMutation = useMutation({
+   301→   301→    mutationFn: (id: string) => api.del(`/api/bank-credits/${id}`),
+   302→   302→    onSuccess: () => {
+   303→   303→      toast.success(t('common.delete'))
+   304→   304→      qc.invalidateQueries({ queryKey: ['bank-credits'] })
+   305→   305→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   306→   306→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   307→   307→      setDeleteTarget(null)
+   308→   308→    },
+   309→   309→  })
+   310→   310→
+   311→   311→  const repaymentMutation = useMutation({
+   312→   312→    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+   313→   313→      api.post(`/api/bank-credits/${id}/repayments`, body),
+   314→   314→    onSuccess: () => {
+   315→   315→      toast.success(t('credit.repaymentAdded'))
+   316→   316→      qc.invalidateQueries({ queryKey: ['bank-credits'] })
+   317→   317→      qc.invalidateQueries({ queryKey: ['bank-credit', repayCredit?.id] })
+   318→   318→      qc.invalidateQueries({ queryKey: ['dashboard'] })
+   319→   319→      qc.invalidateQueries({ queryKey: ['analytics'] })
+   320→   320→      setRepayOpen(false)
+   321→   321→    },
+   322→   322→  })
+   323→   323→
+   324→   324→  // ---------------------------------------------------------------------------
+   325→   325→  // Handlers
+   326→   326→  // ---------------------------------------------------------------------------
+   327→   327→
+   328→   328→  const openCreate = () => {
+   329→   329→    setEditing(null)
+   330→   330→    setFormCreditName('')
+   331→   331→    setFormLender('')
+   332→   332→    setFormOriginalPrincipal('')
+   333→   333→    setFormDurationMonths('12')
+   334→   334→    setFormStartDate(todayLocal())
+   335→   335→    setFormMonthlyInstallment('')
+   336→   336→    setFormInterestRate('')
+   337→   337→    setFormFees('')
+   338→   338→    setFormPaymentDay('1')
+   339→   339→    setFormDescription('')
+   340→   340→    setFormStatus('active')
+   341→   341→    setCreditDialogOpen(true)
+   342→   342→  }
+   343→   343→
+   344→   344→  const openEdit = (c: BankCredit) => {
+   345→   345→    setEditing(c)
+   346→   346→    setFormCreditName(c.creditName)
+   347→   347→    setFormLender(c.lender)
+   348→   348→    setFormOriginalPrincipal(c.originalPrincipal)
+   349→   349→    setFormDurationMonths(String(c.durationMonths))
+   350→   350→    setFormStartDate(toLocalDateString(c.startDate))
+   351→   351→    setFormMonthlyInstallment(c.monthlyInstallment)
+   352→   352→    setFormInterestRate(c.interestRate ?? '')
+   353→   353→    setFormFees(c.fees ?? '')
+   354→   354→    setFormPaymentDay(String(c.paymentDay))
+   355→   355→    setFormDescription(c.description ?? '')
+   356→   356→    setFormStatus((c.status as CreditStatus) || 'active')
+   357→   357→    setCreditDialogOpen(true)
+   358→   358→  }
+   359→   359→
+   360→   360→  const handleCreditSubmit = async () => {
+   361→   361→    if (!formCreditName.trim()) {
+   362→   362→      toast.error(`${t('common.required')}: ${t('credit.creditName')}`)
+   363→   363→      return
+   364→   364→    }
+   365→   365→    if (!formLender.trim()) {
+   366→   366→      toast.error(`${t('common.required')}: ${t('credit.lender')}`)
+   367→   367→      return
+   368→   368→    }
+   369→   369→    const principal = Number(formOriginalPrincipal)
+   370→   370→    if (!Number.isFinite(principal) || principal <= 0) {
+   371→   371→      toast.error(`${t('common.required')}: ${t('credit.originalPrincipal')}`)
+   372→   372→      return
+   373→   373→    }
+   374→   374→    const duration = Number(formDurationMonths)
+   375→   375→    if (!Number.isFinite(duration) || duration < 1 || !Number.isInteger(duration)) {
+   376→   376→      toast.error(`${t('common.required')}: ${t('credit.durationMonths')}`)
+   377→   377→      return
+   378→   378→    }
+   379→   379→    if (!formStartDate) {
+   380→   380→      toast.error(`${t('common.required')}: ${t('credit.startDate')}`)
+   381→   381→      return
+   382→   382→    }
+   383→   383→    const installment = Number(formMonthlyInstallment)
+   384→   384→    if (!Number.isFinite(installment) || installment <= 0) {
+   385→   385→      toast.error(`${t('common.required')}: ${t('credit.monthlyInstallment')}`)
+   386→   386→      return
+   387→   387→    }
+   388→   388→    const payDay = Number(formPaymentDay)
+   389→   389→    if (!Number.isFinite(payDay) || payDay < 1 || payDay > 31 || !Number.isInteger(payDay)) {
+   390→   390→      toast.error(`${t('common.required')}: ${t('credit.paymentDay')}`)
+   391→   391→      return
+   392→   392→    }
+   393→   393→
+   394→   394→    const body: Record<string, unknown> = {
+   395→   395→      creditName: formCreditName.trim(),
+   396→   396→      lender: formLender.trim(),
+   397→   397→      originalPrincipal: principal.toFixed(2),
+   398→   398→      durationMonths: duration,
+   399→   399→      startDate: formStartDate,
+   400→   400→      monthlyInstallment: installment.toFixed(2),
+   401→   401→      paymentDay: payDay,
+   402→   402→      status: formStatus,
+   403→   403→    }
+   404→   404→    if (formInterestRate.trim() !== '') {
+   405→   405→      const ir = Number(formInterestRate)
+   406→   406→      if (!Number.isFinite(ir)) {
+   407→   407→        toast.error(`${t('common.required')}: ${t('credit.interestRate')}`)
+   408→   408→        return
+   409→   409→      }
+   410→   410→      body.interestRate = ir.toFixed(2)
+   411→   411→    } else {
+   412→   412→      body.interestRate = null
+   413→   413→    }
+   414→   414→    if (formFees.trim() !== '') {
+   415→   415→      const fees = Number(formFees)
+   416→   416→      if (!Number.isFinite(fees)) {
+   417→   417→        toast.error(`${t('common.required')}: ${t('credit.fees')}`)
+   418→   418→        return
+   419→   419→      }
+   420→   420→      body.fees = fees.toFixed(2)
+   421→   421→    } else {
+   422→   422→      body.fees = null
+   423→   423→    }
+   424→   424→    if (formDescription.trim()) body.description = formDescription.trim()
+   425→   425→
+   426→   426→    setSubmittingCredit(true)
+   427→   427→    try {
+   428→   428→      if (editing) {
+   429→   429→        await updateMutation.mutateAsync({ id: editing.id, body })
+   430→   430→      } else {
+   431→   431→        await createMutation.mutateAsync(body)
+   432→   432→      }
+   433→   433→    } catch {
+   434→   434→      // useApi already toasted the error.
+   435→   435→    } finally {
+   436→   436→      setSubmittingCredit(false)
+   437→   437→    }
+   438→   438→  }
+   439→   439→
+   440→   440→  const openSchedule = (c: BankCredit) => {
+   441→   441→    setScheduleCredit(c)
+   442→   442→    setScheduleOpen(true)
+   443→   443→  }
+   444→   444→
+   445→   445→  const openRepay = (c: BankCredit) => {
+   446→   446→    setRepayCredit(c)
+   447→   447→    setRepayAmount('')
+   448→   448→    setRepayDate(todayLocal())
+   449→   449→    setRepayComment('')
+   450→   450→    setRepayWalletId('__none__')
+   451→   451→    setRepayOpen(true)
+   452→   452→  }
+   453→   453→
+   454→   454→  const handleRepaySubmit = async () => {
+   455→   455→    if (!repayCredit) return
+   456→   456→    const amt = Number(repayAmount)
+   457→   457→    if (!Number.isFinite(amt) || amt <= 0) {
+   458→   458→      toast.error(`${t('common.required')}: ${t('common.amount')}`)
+   459→   459→      return
+   460→   460→    }
+   461→   461→    if (!repayDate) {
+   462→   462→      toast.error(`${t('common.required')}: ${t('common.date')}`)
+   463→   463→      return
+   464→   464→    }
+   465→   465→    const body: Record<string, unknown> = {
+   466→   466→      amount: amt.toFixed(2),
+   467→   467→      paymentDate: repayDate,
+   468→   468→    }
+   469→   469→    if (repayComment.trim()) body.comment = repayComment.trim()
+   470→   470→    if (repayWalletId !== '__none__') body.walletId = repayWalletId
+   471→   471→    else body.walletId = null
+   472→   472→
+   473→   473→    setSubmittingRepay(true)
+   474→   474→    try {
+   475→   475→      await repaymentMutation.mutateAsync({ id: repayCredit.id, body })
+   476→   476→    } catch {
+   477→   477→      // useApi already toasted the error.
+   478→   478→    } finally {
+   479→   479→      setSubmittingRepay(false)
+   480→   480→    }
+   481→   481→  }
+   482→   482→
+   483→   483→  const handleDelete = async () => {
+   484→   484→    if (!deleteTarget) return
+   485→   485→    try {
+   486→   486→      await deleteMutation.mutateAsync(deleteTarget.id)
+   487→   487→    } catch {
+   488→   488→      // useApi already toasted the error. ConfirmDialog will remain open
+   489→   489→      // because onConfirm throws before onOpenChange(false) is invoked.
+   490→   490→    }
+   491→   491→  }
+   492→   492→
+   493→   493→  // ---------------------------------------------------------------------------
+   494→   494→  // Derived helpers
+   495→   495→  // ---------------------------------------------------------------------------
+   496→   496→
+   497→   497→  const statusLabel = (s: string) => t(statusLabelKey(s))
+   498→   498→
+   499→   499→  // ---------------------------------------------------------------------------
+   500→   500→  // Render
+   501→   501→  // ---------------------------------------------------------------------------
+   502→   502→
+   503→   503→  return (
+   504→   504→    <div className="space-y-6">
+   505→   505→      <PageHeader
+   506→   506→        title={t('credit.title')}
+   507→   507→        actions={
+   508→   508→          <Button onClick={openCreate}>
+   509→   509→            <Plus className="h-4 w-4" />
+   510→   510→            {t('credit.add')}
+   511→   511→          </Button>
+   512→   512→        }
+   513→   513→      />
+   514→   514→
+   515→   515→      {loading ? (
+   516→   516→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   517→   517→          {Array.from({ length: 2 }).map((_, i) => (
+   518→   518→            <Card key={i}>
+   519→   519→              <CardHeader className="pb-2">
+   520→   520→                <Skeleton className="h-5 w-40" />
+   521→   521→                <Skeleton className="mt-2 h-4 w-24" />
+   522→   522→              </CardHeader>
+   523→   523→              <CardContent className="space-y-3">
+   524→   524→                <Skeleton className="h-9 w-48" />
+   525→   525→                <Skeleton className="h-2 w-full" />
+   526→   526→                <div className="grid grid-cols-2 gap-3">
+   527→   527→                  <Skeleton className="h-16 w-full" />
+   528→   528→                  <Skeleton className="h-16 w-full" />
+   529→   529→                  <Skeleton className="h-16 w-full" />
+   530→   530→                  <Skeleton className="h-16 w-full" />
+   531→   531→                </div>
+   532→   532→              </CardContent>
+   533→   533→            </Card>
+   534→   534→          ))}
+   535→   535→        </div>
+   536→   536→      ) : credits.length === 0 ? (
+   537→   537→        <EmptyState
+   538→   538→          title={t('credit.empty')}
+   539→   539→          action={
+   540→   540→            <Button onClick={openCreate}>
+   541→   541→              <Plus className="h-4 w-4" />
+   542→   542→              {t('credit.add')}
+   543→   543→            </Button>
+   544→   544→          }
+   545→   545→        />
+   546→   546→      ) : (
+   547→   547→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   548→   548→          {credits.map((c) => {
+   549→   549→            const colors = creditCardColor(c.progressPct ?? 0)
+   550→   550→            return (
+   551→   551→              <Card
+   552→   552→                key={c.id}
+   553→   553→                className="relative overflow-hidden transition-shadow hover:shadow-md"
+   554→   554→                style={{
+   555→   555→                  borderTop: `4px solid ${colors.stripe}`,
+   556→   556→                  backgroundImage: `linear-gradient(135deg, ${colors.tint}, transparent 60%)`,
+   557→   557→                }}
+   558→   558→              >
+   559→   559→                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+   560→   560→                  <div className="space-y-1.5 pr-2">
+   561→   561→                    <div className="flex items-center gap-2">
+   562→   562→                      <span
+   563→   563→                        className="inline-flex h-7 w-7 items-center justify-center rounded-md"
+   564→   564→                        style={{
+   565→   565→                          backgroundColor: `${colors.stripe}22`,
+   566→   566→                          color: colors.stripe,
+   567→   567→                        }}
+   568→   568→                        aria-hidden
+   569→   569→                      >
+   570→   570→                        <Landmark className="h-4 w-4" />
+   571→   571→                      </span>
+   572→   572→                      <CardTitle className="text-base leading-tight">
+   573→   573→                        {c.creditName}
+   574→   574→                      </CardTitle>
+   575→   575→                    </div>
+   576→   576→                    <div className="flex flex-wrap items-center gap-1.5">
+   577→   577→                      <Badge variant="outline" className="text-[10px]">
+   578→   578→                        {c.lender}
+   579→   579→                      </Badge>
+   580→   580→                      <Badge
+   581→   581→                        variant="outline"
+   582→   582→                        className={cn('text-[10px]', statusToneClass(c.status))}
+   583→   583→                      >
+   584→   584→                        {statusLabel(c.status)}
+   585→   585→                      </Badge>
+   586→   586→                    </div>
+   587→   587→                  </div>
+   588→   588→                  <DropdownMenu>
+   589→   589→                    <DropdownMenuTrigger asChild>
+   590→   590→                      <Button
+   591→   591→                        variant="ghost"
+   592→   592→                        size="icon"
+   593→   593→                        className="h-8 w-8 shrink-0"
+   594→   594→                      >
+   595→   595→                        <MoreHorizontal className="h-4 w-4" />
+   596→   596→                        <span className="sr-only">{t('common.actions')}</span>
+   597→   597→                      </Button>
+   598→   598→                    </DropdownMenuTrigger>
+   599→   599→                    <DropdownMenuContent align="end" className="w-48">
+   600→   600→                      <DropdownMenuItem onClick={() => openSchedule(c)}>
+   601→   601→                        <Eye className="h-4 w-4" />
+   602→   602→                        {t('credit.schedule')}
+   603→   603→                      </DropdownMenuItem>
+   604→   604→                      <DropdownMenuItem onClick={() => openRepay(c)}>
+   605→   605→                        <HandCoins className="h-4 w-4" />
+   606→   606→                        {t('credit.addRepayment')}
+   607→   607→                      </DropdownMenuItem>
+   608→   608→                      <DropdownMenuSeparator />
+   609→   609→                      <DropdownMenuItem onClick={() => openEdit(c)}>
+   610→   610→                        <Pencil className="h-4 w-4" />
+   611→   611→                        {t('common.edit')}
+   612→   612→                      </DropdownMenuItem>
+   613→   613→                      <DropdownMenuItem
+   614→   614→                        className="text-destructive focus:text-destructive"
+   615→   615→                        onClick={() => setDeleteTarget(c)}
+   616→   616→                      >
+   617→   617→                        <Trash2 className="h-4 w-4" />
+   618→   618→                        {t('common.delete')}
+   619→   619→                      </DropdownMenuItem>
+   620→   620→                    </DropdownMenuContent>
+   621→   621→                  </DropdownMenu>
+   622→   622→                </CardHeader>
+   623→   623→
+   624→   624→                <CardContent className="space-y-4">
+   625→   625→                  {/* Outstanding hero */}
+   626→   626→                  <div className="space-y-1">
+   627→   627→                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+   628→   628→                      {t('credit.outstanding')}
+   629→   629→                    </p>
+   630→   630→                    <p
+   631→   631→                      className="text-3xl font-bold tabular-nums"
+   632→   632→                      style={{ color: colors.text }}
+   633→   633→                    >
+   634→   634→                      {money(c.outstanding)}
+   635→   635→                    </p>
+   636→   636→                  </div>
+   637→   637→
+   638→   638→                  {/* Quick row: principal / installment / duration / progress */}
+   639→   639→                  <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+   640→   640→                    <div>
+   641→   641→                      <p className="text-muted-foreground">
+   642→   642→                        {t('credit.originalPrincipal')}
+   643→   643→                      </p>
+   644→   644→                      <p className="font-medium tabular-nums">
+   645→   645→                        {money(c.originalPrincipal, undefined, false)}
+   646→   646→                      </p>
+   647→   647→                    </div>
+   648→   648→                    <div>
+   649→   649→                      <p className="text-muted-foreground">
+   650→   650→                        {t('credit.monthlyInstallment')}
+   651→   651→                      </p>
+   652→   652→                      <p className="font-medium tabular-nums">
+   653→   653→                        {money(c.monthlyInstallment, undefined, false)}
+   654→   654→                      </p>
+   655→   655→                    </div>
+   656→   656→                    <div>
+   657→   657→                      <p className="text-muted-foreground">
+   658→   658→                        {t('credit.durationMonths')}
+   659→   659→                      </p>
+   660→   660→                      <p className="font-medium tabular-nums">
+   661→   661→                        {c.durationMonths}
+   662→   662→                      </p>
+   663→   663→                    </div>
+   664→   664→                    <div>
+   665→   665→                      <p className="text-muted-foreground">
+   666→   666→                        {t('common.progress')}
+   667→   667→                      </p>
+   668→   668→                      <p className="font-medium tabular-nums">
+   669→   669→                        {c.progressPct ?? 0}%
+   670→   670→                      </p>
+   671→   671→                    </div>
+   672→   672→                  </div>
+   673→   673→
+   674→   674→                  {/* Progress bar (custom so we can tint with the card color) */}
+   675→   675→                  <div className="space-y-1">
+   676→   676→                    <div
+   677→   677→                      className="relative h-2 w-full overflow-hidden rounded-full bg-muted"
+   678→   678→                      role="progressbar"
+   679→   679→                      aria-valuenow={c.progressPct ?? 0}
+   680→   680→                      aria-valuemin={0}
+   681→   681→                      aria-valuemax={100}
+   682→   682→                    >
+   683→   683→                      <div
+   684→   684→                        className="h-full rounded-full transition-all"
+   685→   685→                        style={{
+   686→   686→                          width: `${Math.max(0, Math.min(100, c.progressPct ?? 0))}%`,
+   687→   687→                          backgroundColor: colors.stripe,
+   688→   688→                        }}
+   689→   689→                      />
+   690→   690→                    </div>
+   691→   691→                  </div>
+   692→   692→
+   693→   693→                  {/* Stat tiles */}
+   694→   694→                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+   695→   695→                    <MiniStat
+   696→   696→                      icon={CheckCircle2}
+   697→   697→                      label={t('credit.totalRepaid')}
+   698→   698→                      value={money(c.totalRepaid, undefined, false)}
+   699→   699→                      tone="income"
+   700→   700→                    />
+   701→   701→                    <MiniStat
+   702→   702→                      icon={Clock}
+   703→   703→                      label={t('credit.paidInstallments')}
+   704→   704→                      value={`${c.paidInstallments ?? 0} / ${c.paidInstallments + c.remainingInstallments}`}
+   705→   705→                      tone="info"
+   706→   706→                    />
+   707→   707→                    <MiniStat
+   708→   708→                      icon={CalendarClock}
+   709→   709→                      label={t('credit.nextDueDate')}
+   710→   710→                      value={c.nextDueDate ? date(c.nextDueDate) : '—'}
+   711→   711→                      tone="default"
+   712→   712→                    />
+   713→   713→                    <MiniStat
+   714→   714→                      icon={CalendarDays}
+   715→   715→                      label={t('credit.expectedEndDate')}
+   716→   716→                      value={c.expectedEndDate ? date(c.expectedEndDate) : '—'}
+   717→   717→                      tone="default"
+   718→   718→                    />
+   719→   719→                  </div>
+   720→   720→
+   721→   721→                  {c.description && (
+   722→   722→                    <p className="line-clamp-2 text-xs text-muted-foreground">
+   723→   723→                      {c.description}
+   724→   724→                    </p>
+   725→   725→                  )}
+   726→   726→                </CardContent>
+   727→   727→              </Card>
+   728→   728→            )
+   729→   729→          })}
+   730→   730→        </div>
+   731→   731→      )}
+   732→   732→
+   733→   733→      {/* ----------------------------------------------------------------- */}
+   734→   734→      {/* Create / Edit credit dialog                                       */}
+   735→   735→      {/* ----------------------------------------------------------------- */}
+   736→   736→      <Dialog open={creditDialogOpen} onOpenChange={setCreditDialogOpen}>
+   737→   737→        <DialogContent className="sm:max-w-[620px]">
+   738→   738→          <DialogHeader>
+   739→   739→            <DialogTitle>
+   740→   740→              {editing ? t('credit.edit') : t('credit.add')}
+   741→   741→            </DialogTitle>
+   742→   742→            <DialogDescription>{t('credit.title')}</DialogDescription>
+   743→   743→          </DialogHeader>
+   744→   744→
+   745→   745→          <ScrollArea className="max-h-[70vh] pr-3">
+   746→   746→            <div className="grid grid-cols-1 gap-4 p-1">
+   747→   747→              <div className="space-y-1.5">
+   748→   748→                <Label htmlFor="bc-name">
+   749→   749→                  {t('credit.creditName')} <span className="text-destructive">*</span>
+   750→   750→                </Label>
+   751→   751→                <Input
+   752→   752→                  id="bc-name"
+   753→   753→                  value={formCreditName}
+   754→   754→                  onChange={(e) => setFormCreditName(e.target.value)}
+   755→   755→                  placeholder={t('credit.creditName')}
+   756→   756→                />
+   757→   757→              </div>
+   758→   758→
+   759→   759→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   760→   760→                <div className="space-y-1.5">
+   761→   761→                  <Label htmlFor="bc-lender">
+   762→   762→                    {t('credit.lender')} <span className="text-destructive">*</span>
+   763→   763→                  </Label>
+   764→   764→                  <Input
+   765→   765→                    id="bc-lender"
+   766→   766→                    value={formLender}
+   767→   767→                    onChange={(e) => setFormLender(e.target.value)}
+   768→   768→                    placeholder={t('credit.lender')}
+   769→   769→                  />
+   770→   770→                </div>
+   771→   771→                <div className="space-y-1.5">
+   772→   772→                  <Label htmlFor="bc-payment-day">
+   773→   773→                    {t('credit.paymentDay')} <span className="text-destructive">*</span>
+   774→   774→                  </Label>
+   775→   775→                  <Input
+   776→   776→                    id="bc-payment-day"
+   777→   777→                    type="number"
+   778→   778→                    min={1}
+   779→   779→                    max={31}
+   780→   780→                    step={1}
+   781→   781→                    inputMode="numeric"
+   782→   782→                    value={formPaymentDay}
+   783→   783→                    onChange={(e) => setFormPaymentDay(e.target.value)}
+   784→   784→                  />
+   785→   785→                </div>
+   786→   786→              </div>
+   787→   787→
+   788→   788→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   789→   789→                <div className="space-y-1.5">
+   790→   790→                  <Label htmlFor="bc-principal">
+   791→   791→                    {t('credit.originalPrincipal')}{' '}
+   792→   792→                    <span className="text-destructive">*</span>
+   793→   793→                  </Label>
+   794→   794→                  <Input
+   795→   795→                    id="bc-principal"
+   796→   796→                    type="number"
+   797→   797→                    step="0.01"
+   798→   798→                    inputMode="decimal"
+   799→   799→                    value={formOriginalPrincipal}
+   800→   800→                    onChange={(e) => setFormOriginalPrincipal(e.target.value)}
+   801→   801→                    placeholder="0.00"
+   802→   802→                  />
+   803→   803→                </div>
+   804→   804→                <div className="space-y-1.5">
+   805→   805→                  <Label htmlFor="bc-installment">
+   806→   806→                    {t('credit.monthlyInstallment')}{' '}
+   807→   807→                    <span className="text-destructive">*</span>
+   808→   808→                  </Label>
+   809→   809→                  <Input
+   810→   810→                    id="bc-installment"
+   811→   811→                    type="number"
+   812→   812→                    step="0.01"
+   813→   813→                    inputMode="decimal"
+   814→   814→                    value={formMonthlyInstallment}
+   815→   815→                    onChange={(e) => setFormMonthlyInstallment(e.target.value)}
+   816→   816→                    placeholder="0.00"
+   817→   817→                  />
+   818→   818→                </div>
+   819→   819→              </div>
+   820→   820→
+   821→   821→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   822→   822→                <div className="space-y-1.5">
+   823→   823→                  <Label htmlFor="bc-duration">
+   824→   824→                    {t('credit.durationMonths')}{' '}
+   825→   825→                    <span className="text-destructive">*</span>
+   826→   826→                  </Label>
+   827→   827→                  <Input
+   828→   828→                    id="bc-duration"
+   829→   829→                    type="number"
+   830→   830→                    min={1}
+   831→   831→                    max={600}
+   832→   832→                    step={1}
+   833→   833→                    inputMode="numeric"
+   834→   834→                    value={formDurationMonths}
+   835→   835→                    onChange={(e) => setFormDurationMonths(e.target.value)}
+   836→   836→                  />
+   837→   837→                </div>
+   838→   838→                <div className="space-y-1.5">
+   839→   839→                  <Label htmlFor="bc-start">
+   840→   840→                    {t('credit.startDate')} <span className="text-destructive">*</span>
+   841→   841→                  </Label>
+   842→   842→                  <Input
+   843→   843→                    id="bc-start"
+   844→   844→                    type="date"
+   845→   845→                    value={formStartDate}
+   846→   846→                    onChange={(e) => setFormStartDate(e.target.value)}
+   847→   847→                  />
+   848→   848→                </div>
+   849→   849→              </div>
+   850→   850→
+   851→   851→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   852→   852→                <div className="space-y-1.5">
+   853→   853→                  <Label htmlFor="bc-rate">{t('credit.interestRate')}</Label>
+   854→   854→                  <Input
+   855→   855→                    id="bc-rate"
+   856→   856→                    type="number"
+   857→   857→                    step="0.01"
+   858→   858→                    inputMode="decimal"
+   859→   859→                    value={formInterestRate}
+   860→   860→                    onChange={(e) => setFormInterestRate(e.target.value)}
+   861→   861→                    placeholder="0.00"
+   862→   862→                  />
+   863→   863→                </div>
+   864→   864→                <div className="space-y-1.5">
+   865→   865→                  <Label htmlFor="bc-fees">{t('credit.fees')}</Label>
+   866→   866→                  <Input
+   867→   867→                    id="bc-fees"
+   868→   868→                    type="number"
+   869→   869→                    step="0.01"
+   870→   870→                    inputMode="decimal"
+   871→   871→                    value={formFees}
+   872→   872→                    onChange={(e) => setFormFees(e.target.value)}
+   873→   873→                    placeholder="0.00"
+   874→   874→                  />
+   875→   875→                </div>
+   876→   876→              </div>
+   877→   877→
+   878→   878→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   879→   879→                <div className="space-y-1.5">
+   880→   880→                  <Label htmlFor="bc-status">{t('common.status')}</Label>
+   881→   881→                  <Select
+   882→   882→                    value={formStatus}
+   883→   883→                    onValueChange={(v) => setFormStatus(v as CreditStatus)}
+   884→   884→                  >
+   885→   885→                    <SelectTrigger id="bc-status" className="w-full">
+   886→   886→                      <SelectValue />
+   887→   887→                    </SelectTrigger>
+   888→   888→                    <SelectContent>
+   889→   889→                      {CREDIT_STATUSES.map((s) => (
+   890→   890→                        <SelectItem key={s} value={s}>
+   891→   891→                          {t(statusLabelKey(s))}
+   892→   892→                        </SelectItem>
+   893→   893→                      ))}
+   894→   894→                    </SelectContent>
+   895→   895→                  </Select>
+   896→   896→                </div>
+   897→   897→              </div>
+   898→   898→
+   899→   899→              <div className="space-y-1.5">
+   900→   900→                <Label htmlFor="bc-description">{t('common.description')}</Label>
+   901→   901→                <Textarea
+   902→   902→                  id="bc-description"
+   903→   903→                  rows={3}
+   904→   904→                  value={formDescription}
+   905→   905→                  onChange={(e) => setFormDescription(e.target.value)}
+   906→   906→                  placeholder={t('common.description')}
+   907→   907→                />
+   908→   908→              </div>
+   909→   909→            </div>
+   910→   910→          </ScrollArea>
+   911→   911→
+   912→   912→          <DialogFooter>
+   913→   913→            <Button
+   914→   914→              variant="outline"
+   915→   915→              onClick={() => setCreditDialogOpen(false)}
+   916→   916→              disabled={submittingCredit}
+   917→   917→            >
+   918→   918→              {t('common.cancel')}
+   919→   919→            </Button>
+   920→   920→            <Button onClick={handleCreditSubmit} disabled={submittingCredit}>
+   921→   921→              {submittingCredit ? t('common.loading') : t('common.save')}
+   922→   922→            </Button>
+   923→   923→          </DialogFooter>
+   924→   924→        </DialogContent>
+   925→   925→      </Dialog>
+   926→   926→
+   927→   927→      {/* ----------------------------------------------------------------- */}
+   928→   928→      {/* Schedule dialog                                                   */}
+   929→   929→      {/* ----------------------------------------------------------------- */}
+   930→   930→      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+   931→   931→        <DialogContent className="sm:max-w-[760px]">
+   932→   932→          <DialogHeader>
+   933→   933→            <DialogTitle>
+   934→   934→              {t('credit.schedule')}
+   935→   935→              {scheduleCredit ? ` — ${scheduleCredit.creditName}` : ''}
+   936→   936→            </DialogTitle>
+   937→   937→            <DialogDescription>
+   938→   938→              {scheduleCredit?.lender} · {scheduleCredit?.durationMonths}{' '}
+   939→   939→              {t('credit.durationMonths')}
+   940→   940→            </DialogDescription>
+   941→   941→          </DialogHeader>
+   942→   942→
+   943→   943→          {/* Schedule grid (with legend, grouped by year when many installments) */}
+   944→   944→          <ScheduleGrid query={scheduleQuery} />
+   945→   945→
+   946→   946→          <DialogFooter>
+   947→   947→            <Button variant="outline" onClick={() => setScheduleOpen(false)}>
+   948→   948→              {t('common.close')}
+   949→   949→            </Button>
+   950→   950→          </DialogFooter>
+   951→   951→        </DialogContent>
+   952→   952→      </Dialog>
+   953→   953→
+   954→   954→      {/* ----------------------------------------------------------------- */}
+   955→   955→      {/* Add repayment dialog                                              */}
+   956→   956→      {/* ----------------------------------------------------------------- */}
+   957→   957→      <Dialog open={repayOpen} onOpenChange={setRepayOpen}>
+   958→   958→        <DialogContent className="sm:max-w-[520px]">
+   959→   959→          <DialogHeader>
+   960→   960→            <DialogTitle>
+   961→   961→              {t('credit.addRepayment')}
+   962→   962→              {repayCredit ? ` — ${repayCredit.creditName}` : ''}
+   963→   963→            </DialogTitle>
+   964→   964→            <DialogDescription>
+   965→   965→              {t('credit.outstanding')}: {repayCredit ? money(repayCredit.outstanding) : ''}
+   966→   966→            </DialogDescription>
+   967→   967→          </DialogHeader>
+   968→   968→
+   969→   969→          <div className="grid grid-cols-1 gap-4">
+   970→   970→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   971→   971→              <div className="space-y-1.5">
+   972→   972→                <Label htmlFor="rp-amount">
+   973→   973→                  {t('common.amount')} <span className="text-destructive">*</span>
+   974→   974→                </Label>
+   975→   975→                <Input
+   976→   976→                  id="rp-amount"
+   977→   977→                  type="number"
+   978→   978→                  step="0.01"
+   979→   979→                  inputMode="decimal"
+   980→   980→                  value={repayAmount}
+   981→   981→                  onChange={(e) => setRepayAmount(e.target.value)}
+   982→   982→                  placeholder="0.00"
+   983→   983→                />
+   984→   984→              </div>
+   985→   985→              <div className="space-y-1.5">
+   986→   986→                <Label htmlFor="rp-date">
+   987→   987→                  {t('common.date')} <span className="text-destructive">*</span>
+   988→   988→                </Label>
+   989→   989→                <Input
+   990→   990→                  id="rp-date"
+   991→   991→                  type="date"
+   992→   992→                  value={repayDate}
+   993→   993→                  onChange={(e) => setRepayDate(e.target.value)}
+   994→   994→                />
+   995→   995→              </div>
+   996→   996→            </div>
+   997→   997→
+   998→   998→            <div className="space-y-1.5">
+   999→   999→              <Label htmlFor="rp-wallet">{t('common.wallet')}</Label>
+  1000→  1000→              <Select value={repayWalletId} onValueChange={setRepayWalletId}>
+  1001→  1001→                <SelectTrigger id="rp-wallet" className="w-full">
+  1002→  1002→                  <SelectValue />
+  1003→  1003→                </SelectTrigger>
+  1004→  1004→                <SelectContent>
+  1005→  1005→                  <SelectItem value="__none__">{t('common.none')}</SelectItem>
+  1006→  1006→                  {walletsQuery.data?.wallets.map((w) => (
+  1007→  1007→                    <SelectItem key={w.id} value={w.id}>
+  1008→  1008→                      {w.name}
+  1009→  1009→                    </SelectItem>
+  1010→  1010→                  ))}
+  1011→  1011→                </SelectContent>
+  1012→  1012→              </Select>
+  1013→  1013→            </div>
+  1014→  1014→
+  1015→  1015→            <div className="space-y-1.5">
+  1016→  1016→              <Label htmlFor="rp-comment">{t('common.comment')}</Label>
+  1017→  1017→              <Textarea
+  1018→  1018→                id="rp-comment"
+  1019→  1019→                rows={3}
+  1020→  1020→                value={repayComment}
+  1021→  1021→                onChange={(e) => setRepayComment(e.target.value)}
+  1022→  1022→                placeholder={t('common.comment')}
+  1023→  1023→              />
+  1024→  1024→            </div>
+  1025→  1025→          </div>
+  1026→  1026→
+  1027→  1027→          <DialogFooter>
+  1028→  1028→            <Button
+  1029→  1029→              variant="outline"
+  1030→  1030→              onClick={() => setRepayOpen(false)}
+  1031→  1031→              disabled={submittingRepay}
+  1032→  1032→            >
+  1033→  1033→              {t('common.cancel')}
+  1034→  1034→            </Button>
+  1035→  1035→            <Button onClick={handleRepaySubmit} disabled={submittingRepay}>
+  1036→  1036→              {submittingRepay ? t('common.loading') : t('common.save')}
+  1037→  1037→            </Button>
+  1038→  1038→          </DialogFooter>
+  1039→  1039→        </DialogContent>
+  1040→  1040→      </Dialog>
+  1041→  1041→
+  1042→  1042→      {/* Delete confirmation */}
+  1043→  1043→      <ConfirmDialog
+  1044→  1044→        open={!!deleteTarget}
+  1045→  1045→        onOpenChange={(v) => !v && setDeleteTarget(null)}
+  1046→  1046→        title={t('common.delete')}
+  1047→  1047→        description={deleteTarget?.creditName ?? ''}
+  1048→  1048→        confirmLabel={t('common.delete')}
+  1049→  1049→        cancelLabel={t('common.cancel')}
+  1050→  1050→        destructive
+  1051→  1051→        onConfirm={handleDelete}
+  1052→  1052→      />
+  1053→  1053→    </div>
+  1054→  1054→  )
+  1055→  1055→}
+  1056→  1056→
+  1057→  1057→// ---------------------------------------------------------------------------
+  1058→  1058→// Local sub-components
+  1059→  1059→// ---------------------------------------------------------------------------
+  1060→  1060→
+  1061→  1061→function MiniStat({
+  1062→  1062→  icon: Icon,
+  1063→  1063→  label,
+  1064→  1064→  value,
+  1065→  1065→  tone = 'default',
+  1066→  1066→}: {
+  1067→  1067→  icon: typeof Landmark
+  1068→  1068→  label: string
+  1069→  1069→  value: string
+  1070→  1070→  tone?: 'default' | 'income' | 'expense' | 'warning' | 'info'
+  1071→  1071→}) {
+  1072→  1072→  const toneText =
+  1073→  1073→    tone === 'income'
+  1074→  1074→      ? 'text-income'
+  1075→  1075→      : tone === 'expense'
+  1076→  1076→        ? 'text-expense'
+  1077→  1077→        : tone === 'warning'
+  1078→  1078→          ? 'text-warning'
+  1079→  1079→          : tone === 'info'
+  1080→  1080→            ? 'text-info'
+  1081→  1081→            : 'text-foreground'
+  1082→  1082→  return (
+  1083→  1083→    <div className="rounded-md border bg-card/60 p-2.5">
+  1084→  1084→      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+  1085→  1085→        <Icon className="h-3 w-3" />
+  1086→  1086→        <span className="truncate">{label}</span>
+  1087→  1087→      </div>
+  1088→  1088→      <p className={cn('mt-1 text-sm font-semibold tabular-nums truncate', toneText)}>
+  1089→  1089→        {value}
+  1090→  1090→      </p>
+  1091→  1091→    </div>
+  1092→  1092→  )
+  1093→  1093→}
+  1094→  1094→
+  1095→  1095→function LegendDot({ color, label }: { color: string; label: string }) {
+  1096→  1096→  return (
+  1097→  1097→    <div className="flex items-center gap-1.5">
+  1098→  1098→      <span
+  1099→  1099→        aria-hidden
+  1100→  1100→        className="inline-block h-3 w-3 rounded-sm"
+  1101→  1101→        style={{ backgroundColor: color }}
+  1102→  1102→      />
+  1103→  1103→      <span className="text-muted-foreground">{label}</span>
+  1104→  1104→    </div>
+  1105→  1105→  )
+  1106→  1106→}
+  1107→  1107→
+  1108→  1108→function ScheduleGrid({
+  1109→  1109→  query,
+  1110→  1110→}: {
+  1111→  1111→  query: ReturnType<typeof useQuery<BankCreditDetail>>
+  1112→  1112→}) {
+  1113→  1113→  const { t, date, money } = useI18n()
+  1114→  1114→
+  1115→  1115→  const installments = query.data?.installments ?? []
+  1116→  1116→  const isLoading = query.isLoading
+  1117→  1117→
+  1118→  1118→  const paidLabel = useMemo(
+  1119→  1119→    () => t('credit.paidInstallments').split(' ')[0] || 'Paid',
+  1120→  1120→    [t],
+  1121→  1121→  )
+  1122→  1122→  const remainingLabel = t('credit.remainingInstallments')
+  1123→  1123→  const overdueLabel = t('common.remaining')
+  1124→  1124→
+  1125→  1125→  // Group installments by year (ascending).
+  1126→  1126→  const grouped = useMemo(() => {
+  1127→  1127→    const map = new Map<number, CreditInstallment[]>()
+  1128→  1128→    for (const inst of installments) {
+  1129→  1129→      const d = new Date(inst.dueDate)
+  1130→  1130→      const y = isNaN(d.getTime()) ? 0 : d.getFullYear()
+  1131→  1131→      if (!map.has(y)) map.set(y, [])
+  1132→  1132→      map.get(y)!.push(inst)
+  1133→  1133→    }
+  1134→  1134→    return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
+  1135→  1135→  }, [installments])
+  1136→  1136→
+  1137→  1137→  if (isLoading) {
+  1138→  1138→    return (
+  1139→  1139→      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+  1140→  1140→        {Array.from({ length: 12 }).map((_, i) => (
+  1141→  1141→          <Skeleton key={i} className="h-20 w-full" />
+  1142→  1142→        ))}
+  1143→  1143→      </div>
+  1144→  1144→    )
+  1145→  1145→  }
+  1146→  1146→
+  1147→  1147→  if (installments.length === 0) {
+  1148→  1148→    return <EmptyState title={t('common.empty')} />
+  1149→  1149→  }
+  1150→  1150→
+  1151→  1151→  return (
+  1152→  1152→    <ScrollArea className="max-h-[55vh] pr-3">
+  1153→  1153→      <div className="space-y-5 p-1">
+  1154→  1154→        {/* Legend */}
+  1155→  1155→        <div className="flex flex-wrap items-center gap-4 text-xs">
+  1156→  1156→          <LegendDot color="rgba(34,197,94,0.55)" label={paidLabel} />
+  1157→  1157→          <LegendDot color="rgba(239,68,68,0.55)" label={overdueLabel} />
+  1158→  1158→          <LegendDot color="rgba(245,158,11,0.45)" label={remainingLabel} />
+  1159→  1159→        </div>
+  1160→  1160→
+  1161→  1161→        {grouped.map(([year, items]) => (
+  1162→  1162→          <div key={year} className="space-y-2">
+  1163→  1163→            {grouped.length > 1 && (
+  1164→  1164→              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+  1165→  1165→                <Flag className="h-3 w-3" />
+  1166→  1166→                <span>
+  1167→  1167→                  {t('common.year')} {year}
+  1168→  1168→                </span>
+  1169→  1169→                <div className="h-px flex-1 bg-border" />
+  1170→  1170→              </div>
+  1171→  1171→            )}
+  1172→  1172→            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+  1173→  1173→              {items.map((inst) => {
+  1174→  1174→                const seg = installmentSegment(inst)
+  1175→  1175→                const label =
+  1176→  1176→                  inst.status === 'paid'
+  1177→  1177→                    ? paidLabel
+  1178→  1178→                    : seg.kind === 'overdue'
+  1179→  1179→                      ? overdueLabel
+  1180→  1180→                      : remainingLabel
+  1181→  1181→                return (
+  1182→  1182→                  <div
+  1183→  1183→                    key={inst.id}
+  1184→  1184→                    className="rounded-md border p-2.5 text-xs"
+  1185→  1185→                    style={{
+  1186→  1186→                      backgroundColor: seg.bg,
+  1187→  1187→                      borderColor: seg.border,
+  1188→  1188→                    }}
+  1189→  1189→                  >
+  1190→  1190→                    <div className="flex items-center justify-between">
+  1191→  1191→                      <span
+  1192→  1192→                        className="font-semibold"
+  1193→  1193→                        style={{ color: seg.text }}
+  1194→  1194→                      >
+  1195→  1195→                        #{inst.installmentNumber}
+  1196→  1196→                      </span>
+  1197→  1197→                      <Badge
+  1198→  1198→                        variant="outline"
+  1199→  1199→                        className="text-[9px]"
+  1200→  1200→                        style={{
+  1201→  1201→                          borderColor: seg.border,
+  1202→  1202→                          color: seg.text,
+  1203→  1203→                        }}
+  1204→  1204→                      >
+  1205→  1205→                        {label}
+  1206→  1206→                      </Badge>
+  1207→  1207→                    </div>
+  1208→  1208→                    <p className="mt-1.5 text-muted-foreground">
+  1209→  1209→                      {date(inst.dueDate)}
+  1210→  1210→                    </p>
+  1211→  1211→                    <p className="mt-0.5 font-medium tabular-nums">
+  1212→  1212→                      {money(inst.amount, undefined, false)}
+  1213→  1213→                    </p>
+  1214→  1214→                  </div>
+  1215→  1215→                )
+  1216→  1216→              })}
+  1217→  1217→            </div>
+  1218→  1218→          </div>
+  1219→  1219→        ))}
+  1220→  1220→      </div>
+  1221→  1221→    </ScrollArea>
+  1222→  1222→  )
+  1223→  1223→}
+  1224→  1224→
