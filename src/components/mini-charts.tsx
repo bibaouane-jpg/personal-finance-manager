@@ -1,68 +1,88 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 
 // ---------------------------------------------------------------------------
-// Lightweight SVG chart components — no recharts dependency.
-// Guaranteed to render in any React 19 environment.
+// Lightweight chart components — pixel-based, no recharts, React 19 safe.
 // ---------------------------------------------------------------------------
+
+// Hook to measure container width for proper SVG scaling.
+function useContainerWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => setWidth(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return { ref, width }
+}
 
 export interface BarDatum {
   label: string
   values: { value: number; color: string; name: string }[]
 }
 
-/** Grouped vertical bar chart. */
+/** Grouped vertical bar chart — CSS-based for reliable rendering. */
 export function MiniBarChart({ data, height = 260, formatValue }: { data: BarDatum[]; height?: number; formatValue?: (v: number) => string }) {
-  const maxVal = useMemo(() => {
-    let m = 0
-    for (const d of data) for (const v of d.values) m = Math.max(m, v)
-    return m || 1
-  }, [data])
+  // Compute maxVal inline (no useMemo) to avoid stale closure issues.
+  let maxVal = 0
+  for (const d of data) for (const v of d.values) maxVal = Math.max(maxVal, v.value)
+  if (maxVal === 0) maxVal = 1
 
   if (data.length === 0) return null
 
-  const pad = { top: 8, right: 8, bottom: 24, left: 8 }
-  const chartH = height - pad.top - pad.bottom
-  const groupW = 100 / data.length
-  const barW = Math.min(28, (groupW * 0.7) / (data[0]?.values.length || 1))
+  const labelH = 28
+  const chartH = height - labelH - 12
 
   return (
     <div className="w-full" style={{ height }}>
-      <svg width="100%" height={height} viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="overflow-visible">
-        {/* grid lines */}
+      {/* grid lines */}
+      <div className="relative" style={{ height: chartH }}>
         {[0, 0.25, 0.5, 0.75, 1].map((p) => (
-          <line key={p} x1={0} x2={100} y1={pad.top + chartH * (1 - p)} y2={pad.top + chartH * (1 - p)} stroke="var(--border)" strokeWidth={0.2} strokeDasharray="1 1" />
+          <div
+            key={p}
+            className="absolute left-0 right-0 border-t border-dashed border-border/60"
+            style={{ bottom: `${p * 100}%` }}
+          />
         ))}
-        {data.map((d, i) => {
-          const cx = groupW * i + groupW / 2
-          return (
-            <g key={i}>
+        {/* bars */}
+        <div className="absolute inset-0 flex items-end justify-around gap-1 px-1">
+          {data.map((d, i) => (
+            <div key={i} className="flex h-full flex-1 items-end justify-center gap-0.5">
               {d.values.map((v, j) => {
-                const barH = (v.value / maxVal) * chartH
-                const offset = (j - (d.values.length - 1) / 2) * (barW + 2)
+                const barH = maxVal > 0 ? (v.value / maxVal) * 100 : 0
                 return (
-                  <g key={j}>
-                    <rect
-                      x={cx + offset - barW / 2}
-                      y={pad.top + chartH - barH}
-                      width={barW}
-                      height={Math.max(0, barH)}
-                      fill={v.color}
-                      rx={1}
-                    >
-                      <title>{`${v.name}: ${formatValue ? formatValue(v.value) : v.value}`}</title>
-                    </rect>
-                  </g>
+                  <div
+                    key={j}
+                    className="relative rounded-t transition-all hover:opacity-80"
+                    style={{
+                      height: `${Math.max(barH, v.value > 0 ? 2 : 0)}%`,
+                      backgroundColor: v.color,
+                      minWidth: 4,
+                      flex: '1 1 0',
+                      maxWidth: 32,
+                    }}
+                    title={`${v.name}: ${formatValue ? formatValue(v.value) : v.value}`}
+                  />
                 )
               })}
-              <text x={cx} y={height - 6} textAnchor="middle" fontSize={4} fill="var(--muted-foreground)">
-                {d.label}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* labels */}
+      <div className="flex justify-around gap-1 px-1 pt-1" style={{ height: labelH }}>
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 text-center">
+            <span className="text-[10px] text-muted-foreground truncate inline-block max-w-full">{d.label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -83,17 +103,8 @@ export function MiniDonutChart({ data, size = 180, thickness = 28, centerLabel, 
   const cy = size / 2
   const circumference = 2 * Math.PI * r
 
-  // Precompute cumulative offsets without mutation during render
-  let acc = 0
-  const offsets = data.map((d) => {
-    const fraction = d.value / total
-    const dash = fraction * circumference
-    const start = acc
-    acc += dash
-    return dash
-  })
-  // Use a second pass with a functional approach to avoid lint immutability warnings
-  const computed = data.reduce(
+  // Compute segments functionally to avoid lint immutability warnings.
+  const { segments } = data.reduce(
     (state, d, i) => {
       const fraction = d.value / total
       const dash = fraction * circumference
@@ -117,8 +128,6 @@ export function MiniDonutChart({ data, size = 180, thickness = 28, centerLabel, 
     },
     { running: 0, segments: [] as React.ReactNode[] }
   )
-  const segments = computed.segments
-  void offsets
 
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
@@ -142,13 +151,12 @@ export interface HBarDatum {
   color: string
 }
 
-/** Horizontal bar chart (for wallet distribution, category breakdowns). */
+/** Horizontal bar chart. */
 export function MiniHBarChart({ data, height = 260, formatValue }: { data: HBarDatum[]; height?: number; formatValue?: (v: number) => string }) {
   const maxVal = useMemo(() => Math.max(1, ...data.map((d) => d.value)), [data])
   if (data.length === 0) return null
 
   const rowH = Math.min(36, (height - 8) / data.length)
-  const gap = 6
 
   return (
     <div className="w-full space-y-2" style={{ height }}>
@@ -174,53 +182,74 @@ export interface LineDatum {
   value: number
 }
 
-/** Simple area/line chart using SVG path. */
+/** Area/line chart — pixel-based with measured container width. */
 export function MiniAreaChart({ data, height = 260, color = 'var(--info)', formatValue }: { data: LineDatum[]; height?: number; color?: string; formatValue?: (v: number) => string }) {
+  const { ref, width } = useContainerWidth<HTMLDivElement>()
+
   const { maxVal, minVal } = useMemo(() => {
     if (data.length === 0) return { maxVal: 1, minVal: 0 }
     const vals = data.map((d) => d.value)
     return { maxVal: Math.max(...vals, 1), minVal: Math.min(...vals, 0) }
   }, [data])
 
-  if (data.length === 0) return null
+  const gradientId = useMemo(() => `miniAreaFill-${Math.random().toString(36).slice(2, 9)}`, [])
 
-  const pad = { top: 8, right: 8, bottom: 20, left: 8 }
-  const w = 100
+  if (data.length === 0 || width === 0) {
+    return <div ref={ref} className="w-full" style={{ height }} />
+  }
+
+  const pad = { top: 12, right: 12, bottom: 24, left: 12 }
+  const w = Math.max(width, 200)
   const chartH = height - pad.top - pad.bottom
+  const chartW = w - pad.left - pad.right
   const range = maxVal - minVal || 1
-  const stepX = data.length > 1 ? w / (data.length - 1) : 0
+  const stepX = data.length > 1 ? chartW / (data.length - 1) : 0
 
   const points = data.map((d, i) => ({
-    x: i * stepX,
+    x: pad.left + i * stepX,
     y: pad.top + chartH - ((d.value - minVal) / range) * chartH,
     label: d.label,
     value: d.value,
   }))
 
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  const areaPath = `${linePath} L ${w} ${pad.top + chartH} L 0 ${pad.top + chartH} Z`
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ')
+  const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${pad.top + chartH} L ${points[0].x.toFixed(2)} ${pad.top + chartH} Z`
+
+  // Pick which labels to show (every Nth)
+  const labelEvery = Math.max(1, Math.ceil(points.length / 8))
+  const visibleLabels = points.filter((_, i) => i % labelEvery === 0 || i === points.length - 1)
 
   return (
-    <div className="w-full" style={{ height }}>
-      <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="overflow-visible">
+    <div ref={ref} className="w-full" style={{ height }}>
+      <svg width={w} height={height} className="overflow-visible">
         <defs>
-          <linearGradient id="miniAreaFill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.35} />
             <stop offset="100%" stopColor={color} stopOpacity={0.02} />
           </linearGradient>
         </defs>
+        {/* grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((p) => (
-          <line key={p} x1={0} x2={w} y1={pad.top + chartH * (1 - p)} y2={pad.top + chartH * (1 - p)} stroke="var(--border)" strokeWidth={0.2} strokeDasharray="1 1" />
+          <line
+            key={p}
+            x1={pad.left}
+            x2={w - pad.right}
+            y1={pad.top + chartH * (1 - p)}
+            y2={pad.top + chartH * (1 - p)}
+            stroke="var(--border)"
+            strokeWidth={1}
+            strokeDasharray="4 4"
+          />
         ))}
-        <path d={areaPath} fill="url(#miniAreaFill)" stroke="none" />
-        <path d={linePath} fill="none" stroke={color} strokeWidth={0.6} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
+        <path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={0.8} fill={color}>
+          <circle key={i} cx={p.x} cy={p.y} r={3} fill={color}>
             <title>{`${p.label}: ${formatValue ? formatValue(p.value) : p.value}`}</title>
           </circle>
         ))}
-        {points.filter((_, i) => i % Math.ceil(points.length / 6) === 0).map((p, i) => (
-          <text key={i} x={p.x} y={height - 4} textAnchor="middle" fontSize={3} fill="var(--muted-foreground)">
+        {visibleLabels.map((p, i) => (
+          <text key={i} x={p.x} y={height - 6} textAnchor="middle" fontSize={11} fill="var(--muted-foreground)">
             {p.label}
           </text>
         ))}

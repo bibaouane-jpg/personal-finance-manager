@@ -386,7 +386,7 @@ function IncomeVsExpensesChart({ data }: { data: MonthlyBucket[] }) {
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#16a34a' }} />{t('dash.income')}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#dc2626' }} />{t('dash.expenses')}</span>
       </div>
-      <MiniBarChart data={barData} height={300} formatValue={(v) => money(v / 100)} />
+      <MiniBarChart data={barData} height={300} formatValue={(v) => money(v)} />
     </div>
   )
 }

@@ -32,9 +32,28 @@ const toneIconBg: Record<NonNullable<StatCardProps['tone']>, string> = {
   info: 'bg-info/15 text-info',
 }
 
+// Subtle gradient + accent border per tone for a modern fintech look.
+const toneCardStyle: Record<NonNullable<StatCardProps['tone']>, React.CSSProperties> = {
+  default: {},
+  income: { background: 'linear-gradient(135deg, hsl(0 0% 100 / 0.6), hsl(140 60% 96% / 0.8))', borderTop: '3px solid var(--income)' },
+  expense: { background: 'linear-gradient(135deg, hsl(0 0% 100 / 0.6), hsl(0 70% 97% / 0.8))', borderTop: '3px solid var(--expense)' },
+  warning: { background: 'linear-gradient(135deg, hsl(0 0% 100 / 0.6), hsl(40 70% 97% / 0.8))', borderTop: '3px solid var(--warning)' },
+  info: { background: 'linear-gradient(135deg, hsl(0 0% 100 / 0.6), hsl(220 60% 97% / 0.8))', borderTop: '3px solid var(--info)' },
+}
+
+const toneCardStyleDark: Record<NonNullable<StatCardProps['tone']>, React.CSSProperties> = {
+  default: {},
+  income: { background: 'linear-gradient(135deg, hsl(0 0% 12% / 0.4), hsl(140 30% 15% / 0.6))', borderTop: '3px solid var(--income)' },
+  expense: { background: 'linear-gradient(135deg, hsl(0 0% 12% / 0.4), hsl(0 30% 15% / 0.6))', borderTop: '3px solid var(--expense)' },
+  warning: { background: 'linear-gradient(135deg, hsl(0 0% 12% / 0.4), hsl(40 30% 15% / 0.6))', borderTop: '3px solid var(--warning)' },
+  info: { background: 'linear-gradient(135deg, hsl(0 0% 12% / 0.4), hsl(220 30% 15% / 0.6))', borderTop: '3px solid var(--info)' },
+}
+
 export function StatCard({ label, value, icon: Icon, tone = 'default', hint, loading, className }: StatCardProps) {
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  const style = tone === 'default' ? {} : (isDark ? toneCardStyleDark[tone] : toneCardStyle[tone])
   return (
-    <Card className={cn('overflow-hidden', className)}>
+    <Card className={cn('overflow-hidden transition-shadow hover:shadow-md', className)} style={style}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</CardTitle>
         {Icon && (

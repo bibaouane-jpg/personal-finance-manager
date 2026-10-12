@@ -156,6 +156,18 @@ function isAllocStatus(v: string): v is AllocStatus {
 // ---------------------------------------------------------------------------
 // Unit-grid visualization
 // ---------------------------------------------------------------------------
+// User's spec:
+//   - Total = total actives value (NOT reference income). 25000 was just an example.
+//   - Active color = green (adds money to me).
+//   - Passive color = red (takes money from me).
+//   - Passives start from slot 0 and fill until their cumulative value ends.
+//   - Remaining slots = green (actives).
+//   - Blue for remaining money value inside the bar (net = actives - passives).
+// ---------------------------------------------------------------------------
+
+const ACTIVE_COLOR = '#16a34a'   // green
+const PASSIVE_COLOR = '#dc2626'  // red
+const REMAIN_COLOR = '#2563eb'   // blue
 
 interface SquareInfo {
   color: string // hex color or '' for unallocated
@@ -165,11 +177,11 @@ interface SquareInfo {
   unallocated: boolean
 }
 
-function buildUnitSquares(items: Allocation[], referenceIncome: string, unitValue: string): SquareInfo[] {
-  const refCents = toCents(referenceIncome)
+function buildUnitSquares(items: Allocation[], totalActives: string, unitValue: string): SquareInfo[] {
+  const activeCents = toCents(totalActives)
   const unitCents = toCents(unitValue)
-  if (unitCents <= 0) return []
-  const totalUnits = Math.ceil(refCents / unitCents)
+  if (unitCents <= 0 || activeCents <= 0) return []
+  const totalUnits = Math.ceil(activeCents / unitCents)
   if (totalUnits <= 0) return []
 
   const cappedTotal = Math.min(totalUnits, MAX_SQUARES)
@@ -177,26 +189,50 @@ function buildUnitSquares(items: Allocation[], referenceIncome: string, unitValu
   const squares: SquareInfo[] = []
   let idx = 0
 
-  for (const a of items) {
+  // First: fill passives (red) from slot 0.
+  const passives = items.filter((a) => a.allocType === 'passive')
+  for (const a of passives) {
     if (idx >= cappedTotal) break
     const amtCents = toCents(a.amount)
     if (amtCents <= 0) continue
     const units = amtCents / unitCents
     const fullUnits = Math.floor(units)
     const isFractional = units - fullUnits > 0
-    const color = a.color ?? DEFAULT_COLOR
     const name = a.name
     const amount = a.amount
 
     const remaining = cappedTotal - idx
     const takeFull = Math.min(fullUnits, remaining)
     for (let i = 0; i < takeFull; i++) {
-      squares.push({ color, name, amount, partial: false, unallocated: false })
+      squares.push({ color: PASSIVE_COLOR, name, amount, partial: false, unallocated: false })
       idx++
     }
-    // Add a single partial square if there's room and the allocation is fractional.
     if (isFractional && idx < cappedTotal) {
-      squares.push({ color, name, amount, partial: true, unallocated: false })
+      squares.push({ color: PASSIVE_COLOR, name, amount, partial: true, unallocated: false })
+      idx++
+    }
+  }
+
+  // Second: fill actives (green) in remaining slots.
+  const actives = items.filter((a) => a.allocType === 'active')
+  for (const a of actives) {
+    if (idx >= cappedTotal) break
+    const amtCents = toCents(a.amount)
+    if (amtCents <= 0) continue
+    const units = amtCents / unitCents
+    const fullUnits = Math.floor(units)
+    const isFractional = units - fullUnits > 0
+    const name = a.name
+    const amount = a.amount
+
+    const remaining = cappedTotal - idx
+    const takeFull = Math.min(fullUnits, remaining)
+    for (let i = 0; i < takeFull; i++) {
+      squares.push({ color: ACTIVE_COLOR, name, amount, partial: false, unallocated: false })
+      idx++
+    }
+    if (isFractional && idx < cappedTotal) {
+      squares.push({ color: ACTIVE_COLOR, name, amount, partial: true, unallocated: false })
       idx++
     }
   }
@@ -335,19 +371,21 @@ export function AllocationsView() {
   // ---------------------------------------------------------------------------
 
   const squares = useMemo(
-    () => buildUnitSquares(items, summary.referenceIncome, summary.unitValue),
-    [items, summary.referenceIncome, summary.unitValue],
+    () => buildUnitSquares(items, summary.totalActive, summary.unitValue),
+    [items, summary.totalActive, summary.unitValue],
   )
 
-  const refCents = toCents(summary.referenceIncome)
-  const allocatedActiveCents = toCents(summary.totalActive)
-  const overflow = allocatedActiveCents > refCents && refCents > 0
+  const activeCents = toCents(summary.totalActive)
+  const passiveCents = toCents(summary.totalPassive)
+  // Net = actives - passives (blue remaining money value)
+  const netCents = activeCents - passiveCents
 
   const totalUnits = useMemo(() => {
     const unitCents = toCents(summary.unitValue)
     if (unitCents <= 0) return 0
-    return Math.ceil(refCents / unitCents)
-  }, [refCents, summary.unitValue])
+    if (activeCents <= 0) return 0
+    return Math.ceil(activeCents / unitCents)
+  }, [activeCents, summary.unitValue])
   const truncated = totalUnits > MAX_SQUARES
 
   // Selected credit (for the create/edit dialog summary panel)
@@ -554,7 +592,7 @@ export function AllocationsView() {
           label={t('alloc.utilization')}
           value={`${num(Math.round(summary.utilization * 10) / 10)}%`}
           icon={Gauge}
-          tone={overflow ? 'warning' : 'default'}
+          tone={summary.utilization > 100 ? 'warning' : 'default'}
           loading={loading}
         />
         <StatCard
@@ -638,24 +676,28 @@ export function AllocationsView() {
         </CardContent>
       </Card>
 
-      {/* Unit visualization */}
+      {/* Allocation bar visualization */}
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="text-base">{t('alloc.title')}</CardTitle>
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                {num(totalUnits)} × {money(summary.unitValue, 'MAD', false)} = {money(summary.referenceIncome)}
+                {num(totalUnits)} × {money(summary.unitValue, 'MAD', false)} = {money(summary.totalActive)}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-sm bg-muted-foreground/30" />
-                {t('alloc.unallocated')}
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: ACTIVE_COLOR }} />
+                {t('alloc.active')}
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded-sm border border-dashed border-muted-foreground/40" />
-                {t('common.progress')}
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: PASSIVE_COLOR }} />
+                {t('alloc.passive')}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: REMAIN_COLOR }} />
+                {t('common.remaining')}
               </span>
             </div>
           </div>
@@ -707,201 +749,98 @@ export function AllocationsView() {
                   {num(MAX_SQUARES)} / {num(totalUnits)}
                 </p>
               )}
-              {overflow && (
-                <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>
-                    {t('alloc.totalActive')} ({money(summary.totalActive)}) &gt; {t('alloc.referenceIncome')} ({money(summary.referenceIncome)})
-                  </span>
+              {/* Net remaining summary */}
+              <div className="mt-4 grid grid-cols-3 gap-3 border-t pt-4">
+                <div className="rounded-lg p-3" style={{ backgroundColor: `${ACTIVE_COLOR}15` }}>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t('alloc.totalActive')}</div>
+                  <div className="mt-1 text-lg font-bold tabular-nums" style={{ color: ACTIVE_COLOR }}>
+                    {money(summary.totalActive)}
+                  </div>
                 </div>
-              )}
+                <div className="rounded-lg p-3" style={{ backgroundColor: `${PASSIVE_COLOR}15` }}>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t('alloc.totalPassive')}</div>
+                  <div className="mt-1 text-lg font-bold tabular-nums" style={{ color: PASSIVE_COLOR }}>
+                    {money(summary.totalPassive)}
+                  </div>
+                </div>
+                <div className="rounded-lg p-3" style={{ backgroundColor: `${REMAIN_COLOR}15` }}>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t('common.remaining')}</div>
+                  <div className="mt-1 text-lg font-bold tabular-nums" style={{ color: REMAIN_COLOR }}>
+                    {money(netCents > 0 ? netCents / 100 : 0)}
+                  </div>
+                </div>
+              </div>
             </>
           )}
-
-          {/* Legend */}
-          {items.length > 0 && (
-            <div className="mt-6 grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((a) => {
-                const utilizationPct =
-                  refCents > 0 ? pct(a.amount, summary.referenceIncome) : 0
-                return (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-3 rounded-md border px-3 py-2"
-                  >
-                    <span
-                      className="h-4 w-4 shrink-0 rounded-sm"
-                      style={{ backgroundColor: a.color ?? DEFAULT_COLOR }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{a.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {money(a.amount)} · {num(Math.round(utilizationPct * 10) / 10)}%
-                      </div>
-                    </div>
-                    <Badge variant="outline" className={cn('shrink-0', typeBadgeClass(a.allocType))}>
-                      {a.allocType === 'active' ? t('alloc.active') : t('alloc.passive')}
-                    </Badge>
-                  </div>
-                )
-              })}
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Allocation records */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {t('alloc.title')}{' '}
-            <span className="ml-1 text-sm font-normal text-muted-foreground">
-              ({num(items.length)})
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-44 w-full" />
-              ))}
+      {/* Two separate cards: Actives list (green) + Passives list (red) */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Actives card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: ACTIVE_COLOR }} />
+                <CardTitle className="text-base">{t('alloc.active')}</CardTitle>
+              </div>
+              <Badge style={{ backgroundColor: `${ACTIVE_COLOR}20`, color: ACTIVE_COLOR, borderColor: 'transparent' }}>
+                {money(summary.totalActive)}
+              </Badge>
             </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              title={t('alloc.empty')}
-              description={t('alloc.note')}
-              action={
-                <Button onClick={openCreate}>
-                  <Plus className="h-4 w-4" />
-                  {t('alloc.add')}
-                </Button>
-              }
-            />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((a) => {
-                const creditLinked = isCreditLinked(a)
-                const progressPct = Math.max(0, Math.min(100, a.progress ?? 0))
-                return (
-                  <Card key={a.id} className="overflow-hidden">
-                    <div
-                      className="h-1.5 w-full"
-                      style={{ backgroundColor: a.color ?? DEFAULT_COLOR }}
-                    />
-                    <CardContent className="space-y-3 pt-4">
-                      {/* Header row: name + kebab */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="inline-block h-3 w-3 shrink-0 rounded-sm"
-                            style={{ backgroundColor: a.color ?? DEFAULT_COLOR }}
-                          />
-                          <div className="min-w-0">
-                            <div className="truncate font-medium leading-tight">{a.name}</div>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                              <Badge
-                                variant="outline"
-                                className={typeBadgeClass(a.allocType)}
-                              >
-                                {a.allocType === 'active'
-                                  ? t('alloc.active')
-                                  : t('alloc.passive')}
-                              </Badge>
-                              <Badge variant="outline">
-                                {classificationLabel(
-                                  isClassification(a.classification)
-                                    ? a.classification
-                                    : 'other',
-                                )}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                              <span className="sr-only">{t('common.actions')}</span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(a)}>
-                              <Pencil className="h-4 w-4" />
-                              {t('common.edit')}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => setDeleteTarget(a)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              {t('common.delete')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : items.filter((a) => a.allocType === 'active').length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">{t('alloc.empty')}</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto scrollbar-thin">
+                {items.filter((a) => a.allocType === 'active').map((a) => (
+                  <AllocationRow key={a.id} a={a} color={ACTIVE_COLOR} onEdit={openEdit} onDelete={setDeleteTarget} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-                      {/* Amount */}
-                      <div>
-                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                          {t('common.amount')}
-                        </div>
-                        <MoneyText
-                          value={a.amount}
-                          tone={a.allocType === 'active' ? 'income' : 'expense'}
-                          className="text-lg"
-                        />
-                      </div>
-
-                      {/* Progress */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{t('common.progress')}</span>
-                          <span className="tabular-nums">{num(progressPct)}%</span>
-                        </div>
-                        <Progress value={progressPct} className="h-2" />
-                      </div>
-
-                      {/* Linked credit */}
-                      {creditLinked && a.bankCredit && (
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Link2 className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{a.bankCredit.creditName}</span>
-                        </div>
-                      )}
-
-                      {/* Category */}
-                      {a.category && (
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ backgroundColor: a.category.color ?? DEFAULT_COLOR }}
-                          />
-                          <span className="truncate">{a.category.name}</span>
-                        </div>
-                      )}
-
-                      {/* Status + comment */}
-                      <div className="flex items-center justify-between gap-2">
-                        <Badge variant="outline" className={statusBadgeClass(a.status)}>
-                          {statusLabel(a.status)}
-                        </Badge>
-                      </div>
-
-                      {a.comment && (
-                        <p className="line-clamp-2 text-xs text-muted-foreground">
-                          {a.comment}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
+        {/* Passives card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: PASSIVE_COLOR }} />
+                <CardTitle className="text-base">{t('alloc.passive')}</CardTitle>
+              </div>
+              <Badge style={{ backgroundColor: `${PASSIVE_COLOR}20`, color: PASSIVE_COLOR, borderColor: 'transparent' }}>
+                {money(summary.totalPassive)}
+              </Badge>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : items.filter((a) => a.allocType === 'passive').length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">{t('alloc.empty')}</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto scrollbar-thin">
+                {items.filter((a) => a.allocType === 'passive').map((a) => (
+                  <AllocationRow key={a.id} a={a} color={PASSIVE_COLOR} onEdit={openEdit} onDelete={setDeleteTarget} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Create / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -1134,6 +1073,91 @@ export function AllocationsView() {
         destructive
         onConfirm={handleDelete}
       />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// AllocationRow — compact row used in the two separate actives/passives cards
+// ---------------------------------------------------------------------------
+
+function AllocationRow({
+  a,
+  color,
+  onEdit,
+  onDelete,
+}: {
+  a: Allocation
+  color: string
+  onEdit: (a: Allocation) => void
+  onDelete: (a: Allocation) => void
+}) {
+  const { t, money, num } = useI18n()
+  const progressPct = Math.max(0, Math.min(100, a.progress ?? 0))
+  const classLabel = (c: string) => t(`alloc.class.${c}` as string) || c
+  const sBadgeClass = (s: string) => {
+    if (s === 'completed') return 'border-income/30 bg-income/10 text-income'
+    if (s === 'on_hold') return 'border-warning/30 bg-warning/10 text-warning'
+    return 'border-info/30 bg-info/10 text-info'
+  }
+  const sLabel = (s: string) => {
+    if (s === 'completed') return t('goal.status.completed')
+    if (s === 'on_hold') return t('goal.status.on_hold')
+    return t('common.active')
+  }
+  return (
+    <div
+      className="rounded-lg border p-3 transition-colors hover:bg-accent/50"
+      style={{ borderLeftWidth: 3, borderLeftColor: color }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium leading-tight">{a.name}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+            <Badge variant="outline" className="text-[10px]">
+              {classLabel(isClassification(a.classification) ? a.classification : 'other')}
+            </Badge>
+            <Badge variant="outline" className={cn('text-[10px]', sBadgeClass(a.status))}>
+              {sLabel(a.status)}
+            </Badge>
+          </div>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onEdit(a)}>
+              <Pencil className="h-4 w-4" />
+              {t('common.edit')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(a)}>
+              <Trash2 className="h-4 w-4" />
+              {t('common.delete')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <div className="mt-2 flex items-center justify-between">
+        <MoneyText value={a.amount} className="text-base font-bold" />
+        {a.bankCredit && (
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Link2 className="h-3 w-3" />
+            <span className="truncate max-w-[100px]">{a.bankCredit.creditName}</span>
+          </span>
+        )}
+      </div>
+      <div className="mt-2 space-y-1">
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>{t('common.progress')}</span>
+          <span className="tabular-nums">{num(progressPct)}%</span>
+        </div>
+        <Progress value={progressPct} className="h-1.5" />
+      </div>
+      {a.comment && <p className="mt-2 line-clamp-2 text-[11px] text-muted-foreground">{a.comment}</p>}
     </div>
   )
 }

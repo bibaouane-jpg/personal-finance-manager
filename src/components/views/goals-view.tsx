@@ -19,6 +19,7 @@ import {
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Tag,
   X,
 } from 'lucide-react'
@@ -58,6 +59,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 
 import { StatCard, EmptyState, MoneyText, PageHeader } from '@/components/shared'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -182,6 +188,12 @@ export function GoalsView() {
   const [filterPriority, setFilterPriority] = useState<string>(ALL_SENTINEL)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+
+  // ---- Per-category collapsible state ----
+  // Map of categoryKey ("__none__" or category id) -> collapsed
+  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
+  const toggleCat = (key: string) =>
+    setCollapsedCats((prev) => ({ ...prev, [key]: !prev[key] }))
 
   const queryFilters = useMemo(
     () => ({
@@ -550,6 +562,37 @@ export function GoalsView() {
     [summary.byCategory],
   )
 
+  // ---- Group goals by category for per-category card layout ----
+  const groupedByCategory = useMemo(() => {
+    const map = new Map<
+      string,
+      { category: GoalCategory | null; goals: Goal[] }
+    >()
+    for (const g of items) {
+      const key = g.goalCategoryId ?? NONE_SENTINEL
+      if (!map.has(key)) {
+        map.set(key, { category: g.goalCategory ?? null, goals: [] })
+      }
+      map.get(key)!.goals.push(g)
+    }
+    // Sort: categorized categories alphabetically by name, "Uncategorized" last.
+    const groups = Array.from(map.values())
+    groups.sort((a, b) => {
+      if (!a.category && !b.category) return 0
+      if (!a.category) return 1
+      if (!b.category) return -1
+      return a.category.name.localeCompare(b.category.name)
+    })
+    return groups
+  }, [items])
+
+  // Per-category average progress for header.
+  const categoryProgress = (goals: Goal[]) => {
+    if (goals.length === 0) return 0
+    const total = goals.reduce((sum, g) => sum + (g.progress ?? 0), 0)
+    return Math.round(total / goals.length)
+  }
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -798,7 +841,7 @@ export function GoalsView() {
         </CardContent>
       </Card>
 
-      {/* Goals grid */}
+      {/* Goals grouped by category (one Card per category) */}
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -823,135 +866,209 @@ export function GoalsView() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((g) => (
-            <Card key={g.id} className="flex flex-col">
-              <CardContent className="flex flex-1 flex-col gap-3 pt-6">
-                {/* Header: badges + actions */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge
-                        variant="outline"
-                        className={priorityBadgeClass(g.priority)}
-                      >
-                        {t(`goal.priorities.${g.priority}`)}
-                      </Badge>
-                      {g.goalCategory && (
-                        <Badge
-                          variant="outline"
-                          style={{
-                            color: g.goalCategory.color ?? DEFAULT_COLOR,
-                            borderColor: g.goalCategory.color ?? DEFAULT_COLOR,
-                          }}
-                        >
-                          {g.goalCategory.name}
-                        </Badge>
-                      )}
-                    </div>
-                    <h3 className="mt-1.5 truncate text-base font-semibold">
-                      {g.title}
-                    </h3>
-                    {g.description && (
-                      <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
-                        {g.description}
-                      </p>
-                    )}
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="-mr-2 -mt-1 h-7 w-7"
-                        aria-label={t('common.actions')}
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEdit(g)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        {t('common.edit')}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-expense"
-                        onClick={() => setDeleteTarget(g)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {t('common.delete')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+        <div className="space-y-6">
+          {groupedByCategory.map((group) => {
+            const cat = group.category
+            const catKey = cat?.id ?? NONE_SENTINEL
+            const catName = cat?.name ?? (locale === 'fr' ? 'Sans catégorie' : 'Uncategorized')
+            const catColor = cat?.color ?? DEFAULT_COLOR
+            const avgProgress = categoryProgress(group.goals)
+            const collapsed = !!collapsedCats[catKey]
 
-                {/* Status */}
-                <Badge
-                  variant="outline"
-                  className={cn('w-fit', statusBadgeClass(g.status))}
+            return (
+              <Card
+                key={catKey}
+                style={{
+                  borderLeftWidth: 4,
+                  borderLeftColor: catColor,
+                }}
+              >
+                <Collapsible
+                  open={!collapsed}
+                  onOpenChange={(open) => toggleCat(catKey)}
                 >
-                  {statusLabel(g.status)}
-                </Badge>
+                  <CardHeader className="pb-3">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 text-left outline-none"
+                        aria-expanded={!collapsed}
+                        aria-controls={`cat-content-${catKey}`}
+                      >
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full"
+                          style={{ backgroundColor: catColor }}
+                          aria-hidden
+                        />
+                        <CardTitle className="truncate text-base">
+                          {catName}
+                        </CardTitle>
+                        <Badge
+                          variant="secondary"
+                          className="tabular-nums"
+                          aria-label={t('goal.totalGoals')}
+                        >
+                          {num(group.goals.length)}
+                        </Badge>
+                        <span className="ml-auto hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+                          <span className="text-muted-foreground">
+                            {t('common.progress')}
+                          </span>
+                          <span className="font-medium tabular-nums">
+                            {num(avgProgress)}%
+                          </span>
+                          <Progress value={avgProgress} className="h-1.5 w-16" />
+                        </span>
+                        <ChevronDown
+                          className={cn(
+                            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                            collapsed ? '' : 'rotate-180',
+                          )}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                  </CardHeader>
+                  <CollapsibleContent id={`cat-content-${catKey}`}>
+                    <CardContent>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {group.goals.map((g) => (
+                          <Card key={g.id} className="flex flex-col">
+                            <CardContent className="flex flex-1 flex-col gap-3 pt-6">
+                              {/* Header: badges + actions */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <Badge
+                                      variant="outline"
+                                      className={priorityBadgeClass(g.priority)}
+                                    >
+                                      {t(`goal.priorities.${g.priority}`)}
+                                    </Badge>
+                                    {g.goalCategory && (
+                                      <Badge
+                                        variant="outline"
+                                        style={{
+                                          color: g.goalCategory.color ?? DEFAULT_COLOR,
+                                          borderColor:
+                                            g.goalCategory.color ?? DEFAULT_COLOR,
+                                        }}
+                                      >
+                                        {g.goalCategory.name}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <h3 className="mt-1.5 truncate text-base font-semibold">
+                                    {g.title}
+                                  </h3>
+                                  {g.description && (
+                                    <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                                      {g.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="-mr-2 -mt-1 h-7 w-7"
+                                      aria-label={t('common.actions')}
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openEdit(g)}>
+                                      <Pencil className="mr-2 h-4 w-4" />
+                                      {t('common.edit')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-expense"
+                                      onClick={() => setDeleteTarget(g)}
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      {t('common.delete')}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
 
-                {/* Progress */}
-                <div>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">
-                      {t('common.progress')}
-                    </span>
-                    <span className="font-medium tabular-nums">
-                      {num(g.progress)}%
-                    </span>
-                  </div>
-                  <Progress value={g.progress} className="h-2" />
-                </div>
+                              {/* Status */}
+                              <Badge
+                                variant="outline"
+                                className={cn('w-fit', statusBadgeClass(g.status))}
+                              >
+                                {statusLabel(g.status)}
+                              </Badge>
 
-                {/* Budget row */}
-                {g.requiredBudget && (
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <p className="text-muted-foreground">
-                        {t('goal.requiredBudget')}
-                      </p>
-                      <MoneyText value={g.requiredBudget} />
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">
-                        {t('goal.savedBudget')}
-                      </p>
-                      <MoneyText
-                        value={g.savedBudget ?? '0'}
-                        tone="income"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">
-                        {t('goal.remainingBudget')}
-                      </p>
-                      <MoneyText
-                        value={g.remainingBudget}
-                        tone={
-                          Number(g.remainingBudget) < 0 ? 'expense' : 'default'
-                        }
-                      />
-                    </div>
-                  </div>
-                )}
+                              {/* Progress */}
+                              <div>
+                                <div className="mb-1 flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">
+                                    {t('common.progress')}
+                                  </span>
+                                  <span className="font-medium tabular-nums">
+                                    {num(g.progress)}%
+                                  </span>
+                                </div>
+                                <Progress value={g.progress} className="h-2" />
+                              </div>
 
-                {/* Footer */}
-                <div className="mt-auto space-y-1 text-xs text-muted-foreground">
-                  {g.targetDate && (
-                    <div className="flex items-center gap-1.5">
-                      <CalendarClock className="h-3.5 w-3.5" />
-                      <span>{date(g.targetDate)}</span>
-                    </div>
-                  )}
-                  {g.note && <p className="line-clamp-2">{g.note}</p>}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                              {/* Budget row */}
+                              {g.requiredBudget && (
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div>
+                                    <p className="text-muted-foreground">
+                                      {t('goal.requiredBudget')}
+                                    </p>
+                                    <MoneyText value={g.requiredBudget} />
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">
+                                      {t('goal.savedBudget')}
+                                    </p>
+                                    <MoneyText
+                                      value={g.savedBudget ?? '0'}
+                                      tone="income"
+                                    />
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">
+                                      {t('goal.remainingBudget')}
+                                    </p>
+                                    <MoneyText
+                                      value={g.remainingBudget}
+                                      tone={
+                                        Number(g.remainingBudget) < 0
+                                          ? 'expense'
+                                          : 'default'
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Footer */}
+                              <div className="mt-auto space-y-1 text-xs text-muted-foreground">
+                                {g.targetDate && (
+                                  <div className="flex items-center gap-1.5">
+                                    <CalendarClock className="h-3.5 w-3.5" />
+                                    <span>{date(g.targetDate)}</span>
+                                  </div>
+                                )}
+                                {g.note && <p className="line-clamp-2">{g.note}</p>}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Collapsible>
+              </Card>
+            )
+          })}
         </div>
       )}
 

@@ -789,3 +789,33 @@ Work Log:
 
 Stage Summary:
 Both target view files are now 100% free of recharts imports and chart elements. All 13 charts in `analytics-view.tsx` (4 sections × 2-4 charts + NetCashFlow 2 + Allocations 1 + Goals 2 + Wallets 4 + CashWithdrawals 1 + Transfers 2) plus the single category-comparison chart in `goals-view.tsx` now render via the React 19-safe custom SVG `mini-charts` components. Color mapping follows the spec: income green (`var(--income)`), expenses red (`var(--expense)`), info blue (`var(--info)`), warning orange (`var(--warning)`), with API-provided category/wallet colors passed through unchanged via `safeColor()`. The migration is purely a chart-rendering swap — no API contract, Prisma schema, app-shell, mini-charts.tsx, or dashboard-view.tsx changes were made.
+
+---
+Task ID: 14a
+Agent: goals-view-grouping-agent
+Task: Group goals into per-category cards (instead of a flat grid) in `src/components/views/goals-view.tsx`, and ensure the existing category filter actually filters the displayed cards.
+
+Work Log:
+- Read existing `src/components/views/goals-view.tsx` to map out its current structure: year selector, summary StatCards, MiniHBarChart category comparison, filter bar (status / category / priority / search / clear / manage categories), flat goals grid, create/edit dialog, inline add-category dialog, manage-categories dialog, delete confirmations.
+- Confirmed that the category filter Select already existed in the filter bar (`filterCategoryId` state, with `ALL_SENTINEL` option + all `categories`). It was already being sent to the API as `goalCategoryId`, so when a specific category is selected, the server only returns goals for that category and the per-category card layout will naturally show only that one card. When "All" is selected, all category cards are stacked vertically. No new filter plumbing was needed.
+- Added imports: `ChevronDown` from `lucide-react`, and `Collapsible`, `CollapsibleContent`, `CollapsibleTrigger` from `@/components/ui/collapsible`.
+- Added state: `collapsedCats: Record<string, boolean>` plus a `toggleCat(key)` helper to make each category card collapsible (optional per the task notes, but useful UX given the per-category grouping).
+- Added `useMemo` `groupedByCategory` that buckets `items` by `goalCategoryId` (or `NONE_SENTINEL` for uncategorized goals) into `{ category: GoalCategory | null; goals: Goal[] }` entries, then sorts them with categorized groups first (alphabetical by name) and "Uncategorized" group last.
+- Added a `categoryProgress(goals)` helper that returns the average `progress` for the goals inside a category (used in the card header progress badge).
+- Replaced the previous flat goals grid block (loading skeletons + empty state + flat `items.map(...)`) with a new block that:
+  - Renders the same loading skeleton grid when `loading`.
+  - Renders the same `EmptyState` when `items.length === 0`.
+  - Otherwise iterates `groupedByCategory`, rendering one outer `Card` per group with:
+    - `style={{ borderLeftWidth: 4, borderLeftColor: catColor }}` accent using the category color (defaults to `DEFAULT_COLOR`).
+    - A `Collapsible` wrapping the header + content.
+    - `CardHeader` containing a `CollapsibleTrigger` (full-width `<button>`) showing the category color swatch, category name (or localized "Uncategorized" / "Sans catégorie" fallback using `locale` from `useI18n`), a goal count Badge, an inline per-category progress meter (hidden on mobile), and a rotating `ChevronDown` affordance.
+    - `CollapsibleContent` containing a 2-column grid (`grid-cols-1 sm:grid-cols-2`) of the individual goal cards. Each individual goal card preserves the exact existing visual: priority badge, category badge (color-tinted), title/description, actions dropdown (Edit/Delete), status badge, progress bar, budget trio, target date and note footer.
+- Used existing i18n keys (`common.progress`, `common.actions`, `goal.totalGoals`, `common.all`, `common.none`, `common.category`) where possible. For the uncategorized-group label, used a `locale === 'fr' ? 'Sans catégorie' : 'Uncategorized'` inline fallback (did not modify `src/lib/i18n.ts` per task constraints).
+- Did NOT modify the Prisma schema, app-shell, mini-charts.tsx, or any other file. All API paths are relative (`/api/goals`, `/api/goal-categories`, `/api/goals/export`).
+
+Verification:
+- `cd /home/z/my-project && bun run lint` — clean (no ESLint errors).
+- `tail -30 /home/z/my-project/dev.log` — page compiles successfully, `GET /api/goals?year=2026&page=1&pageSize=100 200` and `GET /api/goal-categories 200` returning data, no runtime errors.
+
+Stage Summary:
+The Goals view now organizes goals into one Card per `goalCategory` (plus an "Uncategorized" card when `goalCategoryId` is null). Each category card has a colored left-border accent, a header showing the category color swatch, name, goal-count badge, average progress, and a collapsible toggle, and contains the individual goal cards in a responsive 2-column grid. The existing category filter Select already drives the API query, so selecting a specific category now causes only that one category card to render; selecting "All" renders every category card stacked vertically. All existing functionality (year selector, summary StatCards, comparison chart, status/priority/search filters, CRUD dialogs, category management dialogs, CSV export) is preserved.
