@@ -13,9 +13,6 @@ import {
   Layers,
   TrendingUp,
   TrendingDown,
-  Wallet,
-  PieChart,
-  CircleDollarSign,
   Gauge,
   AlertTriangle,
   Link2,
@@ -23,7 +20,7 @@ import {
 
 import { useI18n } from '@/lib/use-i18n'
 import { useApi } from '@/lib/use-api'
-import { toCents, pct } from '@/lib/money'
+import { toCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -379,6 +376,11 @@ export function AllocationsView() {
   const passiveCents = toCents(summary.totalPassive)
   // Net = actives - passives (blue remaining money value)
   const netCents = activeCents - passiveCents
+  // Available capacity = total actives - total passives
+  const availableCents = activeCents - passiveCents
+  const availableAmount = availableCents >= 0 ? availableCents / 100 : availableCents / 100
+  // Utilization = percentage of total passive from total actives
+  const utilizationPct = activeCents > 0 ? (passiveCents / activeCents) * 100 : 0
 
   const totalUnits = useMemo(() => {
     const unitCents = toCents(summary.unitValue)
@@ -551,15 +553,7 @@ export function AllocationsView() {
       </div>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-        <StatCard
-          label={t('alloc.referenceIncome')}
-          value={money(summary.referenceIncome)}
-          icon={CircleDollarSign}
-          tone="default"
-          loading={loading}
-          hint={`${num(totalUnits)} × ${money(summary.unitValue, 'MAD', false)}`}
-        />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard
           label={t('alloc.totalActive')}
           value={money(summary.totalActive)}
@@ -575,31 +569,17 @@ export function AllocationsView() {
           loading={loading}
         />
         <StatCard
-          label={t('alloc.totalAllocated')}
-          value={money(summary.totalAllocated)}
-          icon={Wallet}
-          tone="default"
-          loading={loading}
-        />
-        <StatCard
-          label={t('alloc.unallocated')}
-          value={money(summary.unallocated)}
-          icon={PieChart}
-          tone="info"
-          loading={loading}
-        />
-        <StatCard
           label={t('alloc.utilization')}
-          value={`${num(Math.round(summary.utilization * 10) / 10)}%`}
+          value={`${num(Math.round(utilizationPct * 10) / 10)}%`}
           icon={Gauge}
-          tone={summary.utilization > 100 ? 'warning' : 'default'}
+          tone={utilizationPct > 100 ? 'warning' : 'default'}
           loading={loading}
         />
         <StatCard
           label={t('alloc.available')}
-          value={money(summary.available)}
+          value={money(availableAmount)}
           icon={Layers}
-          tone="info"
+          tone={availableCents >= 0 ? 'info' : 'expense'}
           loading={loading}
         />
       </div>

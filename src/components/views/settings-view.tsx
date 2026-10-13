@@ -252,7 +252,6 @@ export function SettingsView() {
   const [timezone, setTimezone] = useState('Africa/Casablanca')
 
   // ---- Financial section form state ----
-  const [refIncome, setRefIncome] = useState('')
   const [allocUnit, setAllocUnit] = useState('')
   const [allowOverdraft, setAllowOverdraft] = useState(false)
 
@@ -275,7 +274,6 @@ export function SettingsView() {
       setAppNameFr(settings.appNameFr ?? '')
       setCurrency(settings.defaultCurrency ?? 'MAD')
       setTimezone(settings.defaultTimezone ?? 'Africa/Casablanca')
-      setRefIncome(settings.referenceMonthlyIncome ?? '')
       setAllocUnit(settings.allocationUnitValue ?? '')
       setAllowOverdraft(Boolean(settings.allowOverdraft))
     }
@@ -383,18 +381,12 @@ export function SettingsView() {
   }
 
   const handleSaveFinancial = async () => {
-    const incomeNum = Number(refIncome)
     const unitNum = Number(allocUnit)
-    if (!Number.isFinite(incomeNum) || incomeNum < 0) {
-      toast.error(`${t('common.required')}: ${t('settings.referenceMonthlyIncome')}`)
-      return
-    }
     if (!Number.isFinite(unitNum) || unitNum <= 0) {
       toast.error(`${t('common.required')}: ${t('settings.allocationUnitValue')}`)
       return
     }
     const body: Record<string, unknown> = {
-      referenceMonthlyIncome: incomeNum.toFixed(2),
       allocationUnitValue: unitNum.toFixed(2),
       allowOverdraft,
     }
@@ -804,8 +796,8 @@ export function SettingsView() {
             icon={PiggyBank}
             description={
               locale === 'fr'
-                ? 'Revenu mensuel de référence, unité d’allocation et découvert.'
-                : 'Reference monthly income, allocation unit and overdraft policy.'
+                ? "Unité d'allocation et politique de découvert."
+                : 'Allocation unit and overdraft policy.'
             }
             footer={
               <Button
@@ -818,32 +810,6 @@ export function SettingsView() {
               </Button>
             }
           >
-            <FieldRow
-              label={t('settings.referenceMonthlyIncome')}
-              htmlFor="settings-ref-income"
-              hint={
-                locale === 'fr'
-                  ? 'Revenu net mensuel moyen utilisé pour les allocations (50/30/20…).'
-                  : 'Average net monthly income used for allocations (50/30/20…).'
-              }
-            >
-              <div className="flex items-center gap-2">
-                <Input
-                  id="settings-ref-income"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
-                  value={refIncome}
-                  onChange={(e) => setRefIncome(e.target.value)}
-                  placeholder="25000"
-                />
-                <Badge variant="outline" className="shrink-0">
-                  {currency.toUpperCase()}
-                </Badge>
-              </div>
-            </FieldRow>
-
             <FieldRow
               label={t('settings.allocationUnitValue')}
               htmlFor="settings-alloc-unit"

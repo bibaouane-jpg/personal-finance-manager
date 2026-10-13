@@ -19,13 +19,12 @@ import {
   ArrowDownToLine,
   Hash,
   Trophy,
-  Layers,
-  CircleDollarSign,
   PiggyBank,
 } from 'lucide-react'
 
 import { useI18n } from '@/lib/use-i18n'
 import { useApi } from '@/lib/use-api'
+import { toCents } from '@/lib/money'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -1162,17 +1161,20 @@ function AllocationsSection({ data, loading }: { data?: AllocationsData; loading
     }))
   }, [data?.byClassification])
 
+  // Compute new derived metrics client-side:
+  //   Available capacity = total actives - total passives
+  //   Utilization = % of total passive from total actives
+  const activeCents = toCents(data?.totalActive ?? '0')
+  const passiveCents = toCents(data?.totalPassive ?? '0')
+  const availableCents = activeCents - passiveCents
+  const availableAmount = availableCents / 100
+  const utilizationPct = activeCents > 0 ? (passiveCents / activeCents) * 100 : 0
+
   if (loading) return <AnalyticsSkeleton />
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label={t('alloc.referenceIncome')}
-          value={money(data?.referenceIncome)}
-          icon={CircleDollarSign}
-          tone="default"
-        />
         <StatCard
           label={t('alloc.totalActive')}
           value={money(data?.totalActive)}
@@ -1186,34 +1188,22 @@ function AllocationsSection({ data, loading }: { data?: AllocationsData; loading
           tone="expense"
         />
         <StatCard
-          label={t('alloc.totalAllocated')}
-          value={money(data?.totalAllocated)}
-          icon={Layers}
-          tone="default"
-        />
-        <StatCard
-          label={t('alloc.unallocated')}
-          value={money(data?.unallocated)}
-          icon={WalletIcon}
-          tone="warning"
+          label={t('alloc.utilization')}
+          value={`${utilizationPct.toFixed(1)}%`}
+          icon={Percent}
+          tone={utilizationPct > 100 ? 'warning' : 'default'}
         />
         <StatCard
           label={t('alloc.available')}
-          value={money(data?.available)}
+          value={money(availableAmount)}
           icon={Landmark}
-          tone="info"
-        />
-        <StatCard
-          label={t('alloc.utilization')}
-          value={`${(data?.utilization ?? 0).toFixed(1)}%`}
-          icon={Percent}
-          tone="default"
+          tone={availableCents >= 0 ? 'info' : 'expense'}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title={`${t('alloc.utilization')} — ${(data?.utilization ?? 0).toFixed(1)}%`}>
-          <Progress value={data?.utilization ?? 0} className="h-4" />
+        <ChartCard title={`${t('alloc.utilization')} — ${utilizationPct.toFixed(1)}%`}>
+          <Progress value={utilizationPct} className="h-4" />
         </ChartCard>
 
         <ChartCard title={t('analytics.byCategory')}>
@@ -1225,8 +1215,8 @@ function AllocationsSection({ data, loading }: { data?: AllocationsData; loading
                 data={byClassification}
                 size={180}
                 thickness={28}
-                centerLabel={t('alloc.totalAllocated')}
-                centerValue={money(data?.totalAllocated)}
+                centerLabel={t('alloc.totalActive')}
+                centerValue={money(data?.totalActive)}
                 formatValue={(v) => money(v)}
               />
             </div>
