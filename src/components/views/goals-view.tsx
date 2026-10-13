@@ -169,7 +169,7 @@ function isGoalStatus(v: string): v is GoalStatus {
 // ---------------------------------------------------------------------------
 
 export function GoalsView() {
-  const { t, money, num, date } = useI18n()
+  const { t, money, num, date, locale } = useI18n()
   const api = useApi()
   const qc = useQueryClient()
 
