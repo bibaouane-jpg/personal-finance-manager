@@ -1,4 +1,3 @@
-```dockerfile
 # ---- Stage 1: Install dependencies ----
 FROM oven/bun:1 AS deps
 WORKDIR /app
@@ -42,4 +41,3 @@ EXPOSE 3000
 
 # Use the local Prisma ORM CLI, not bunx's downloaded CLI
 CMD ["sh", "-c", "./node_modules/.bin/prisma db push --accept-data-loss && bun server.js"]
-```
