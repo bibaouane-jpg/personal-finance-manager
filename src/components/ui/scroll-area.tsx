@@ -13,12 +13,22 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      // `overflow-hidden` is critical: without it, max-h-* on the root does not
+      // constrain the inner Viewport (which uses height:100%), causing content to
+      // overflow past the max-height boundary (e.g. overlapping the footer).
+      // With overflow-hidden, the root clips at max-h, the Viewport's height:100%
+      // resolves against that constrained height, and Radix's internal overflow:scroll
+      // makes the content scroll properly.
+      className={cn("relative overflow-hidden", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        // max-h-[inherit] makes the viewport inherit the root's max-h-* constraint.
+        // Without it, height:100% resolves to auto (content height) when the root
+        // uses max-height (not height), so the viewport grows past the boundary and
+        // content never scrolls — it overflows past the footer instead.
+        className="focus-visible:ring-ring/50 size-full max-h-[inherit] rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
